@@ -34,7 +34,6 @@
 
 #include <errno.h>
 #include <sys/ioctl.h>
-#include <valgrind/memcheck.h>
 
 /* Number of attrs in this and all the link'd buffers */
 unsigned int _ioctl_final_num_attrs(unsigned int num_attrs,
@@ -93,10 +92,6 @@ static void prepare_attrs(struct ibv_command_buffer *cmd)
 
 static void finalize_attr(struct ib_uverbs_attr *attr)
 {
-	/* Only matches UVERBS_ATTR_TYPE_PTR_OUT */
-	if (attr->flags & UVERBS_ATTR_F_VALID_OUTPUT && attr->len)
-		VALGRIND_MAKE_MEM_DEFINED((void *)(uintptr_t)attr->data,
-					  attr->len);
 }
 
 /*
