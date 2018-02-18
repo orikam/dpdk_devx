@@ -50,9 +50,7 @@ static pthread_mutex_t dev_list_lock = PTHREAD_MUTEX_INITIALIZER;
 static int initialized;
 static struct list_head device_list = LIST_HEAD_INIT(device_list);
 
-LATEST_SYMVER_FUNC(ibv_get_device_list, 1_1, "IBVERBS_1.1",
-		   struct ibv_device **,
-		   int *num)
+struct devx_device **devx_get_device_list(int *num)
 {
 	struct ibv_device **l = NULL;
 	struct verbs_device *device;
@@ -79,7 +77,7 @@ LATEST_SYMVER_FUNC(ibv_get_device_list, 1_1, "IBVERBS_1.1",
 		goto out;
 	}
 
-	l = calloc(num_devices + 1, sizeof (struct ibv_device *));
+	l = calloc(num_devices + 1, sizeof (struct devx_device *));
 	if (!l) {
 		errno = ENOMEM;
 		goto out;
@@ -97,9 +95,7 @@ out:
 	return l;
 }
 
-LATEST_SYMVER_FUNC(ibv_free_device_list, 1_1, "IBVERBS_1.1",
-		   void,
-		   struct ibv_device **list)
+void devx_free_device_list(struct devx_device **list)
 {
 	int i;
 
@@ -108,83 +104,6 @@ LATEST_SYMVER_FUNC(ibv_free_device_list, 1_1, "IBVERBS_1.1",
 	free(list);
 }
 
-LATEST_SYMVER_FUNC(ibv_get_device_name, 1_1, "IBVERBS_1.1",
-		   const char *,
-		   struct ibv_device *device)
-{
-	return device->name;
-}
-
-LATEST_SYMVER_FUNC(ibv_get_device_guid, 1_1, "IBVERBS_1.1",
-		   __be64,
-		   struct ibv_device *device)
-{
-	char attr[24];
-	uint64_t guid = 0;
-	uint16_t parts[4];
-	int i;
-
-	if (ibv_read_sysfs_file(device->ibdev_path, "node_guid",
-				attr, sizeof attr) < 0)
-		return 0;
-
-	if (sscanf(attr, "%hx:%hx:%hx:%hx",
-		   parts, parts + 1, parts + 2, parts + 3) != 4)
-		return 0;
-
-	for (i = 0; i < 4; ++i)
-		guid = (guid << 16) | parts[i];
-
-	return htobe64(guid);
-}
-
-void verbs_init_cq(struct ibv_cq *cq, struct ibv_context *context,
-		       struct ibv_comp_channel *channel,
-		       void *cq_context)
-{
-	cq->context		   = context;
-	cq->channel		   = channel;
-
-	if (cq->channel) {
-		pthread_mutex_lock(&context->mutex);
-		++cq->channel->refcnt;
-		pthread_mutex_unlock(&context->mutex);
-	}
-
-	cq->cq_context		   = cq_context;
-	cq->comp_events_completed  = 0;
-	cq->async_events_completed = 0;
-	pthread_mutex_init(&cq->mutex, NULL);
-	pthread_cond_init(&cq->cond, NULL);
-}
-
-static struct ibv_cq_ex *
-__lib_ibv_create_cq_ex(struct ibv_context *context,
-		       struct ibv_cq_init_attr_ex *cq_attr)
-{
-	struct verbs_context *vctx =
-		container_of(context, struct verbs_context, context);
-	struct ibv_cq_ex *cq;
-
-	if (cq_attr->wc_flags & ~IBV_CREATE_CQ_SUP_WC_FLAGS) {
-		errno = EOPNOTSUPP;
-		return NULL;
-	}
-
-	cq = vctx->priv->create_cq_ex(context, cq_attr);
-
-	if (cq)
-		verbs_init_cq(ibv_cq_ex_to_cq(cq), context,
-			        cq_attr->channel, cq_attr->cq_context);
-
-	return cq;
-}
-
-/*
- * Ownership of cmd_fd is transferred into this function, and it will either
- * be released during the matching call to verbs_uninit_contxt or during the
- * failure path of this function.
- */
 int verbs_init_context(struct verbs_context *context_ex,
 		       struct ibv_device *device, int cmd_fd,
 		       uint32_t driver_id)
@@ -195,12 +114,15 @@ int verbs_init_context(struct verbs_context *context_ex,
 
 	context->device = device;
 	context->cmd_fd = cmd_fd;
+#if 0
 	context->async_fd = -1;
 	pthread_mutex_init(&context->mutex, NULL);
 
 	context_ex->context.abi_compat = __VERBS_ABI_IS_EXTENDED;
+#endif
 	context_ex->sz = sizeof(*context_ex);
 
+#if 0
 	/*
 	 * In order to maintain backward/forward binary compatibility
 	 * with apps compiled against libibverbs-1.1.8 that use the
@@ -227,7 +149,7 @@ int verbs_init_context(struct verbs_context *context_ex,
 
 	context_ex->priv->driver_id = driver_id;
 	verbs_set_ops(context_ex, &verbs_dummy_ops);
-
+#endif
 	return 0;
 }
 
@@ -263,9 +185,7 @@ err_free:
 	return NULL;
 }
 
-LATEST_SYMVER_FUNC(ibv_open_device, 1_1, "IBVERBS_1.1",
-		   struct ibv_context *,
-		   struct ibv_device *device)
+void *devx_open_device(struct devx_device *device)
 {
 	struct verbs_device *verbs_device = verbs_get_device(device);
 	char *devpath;
@@ -293,32 +213,39 @@ LATEST_SYMVER_FUNC(ibv_open_device, 1_1, "IBVERBS_1.1",
 	if (!context_ex)
 		return NULL;
 
+#if 0
 	if (context_ex->create_cq_ex) {
 		context_ex->priv->create_cq_ex = context_ex->create_cq_ex;
 		context_ex->create_cq_ex = __lib_ibv_create_cq_ex;
 	}
+#endif
 
 	return &context_ex->context;
 }
 
 void verbs_uninit_context(struct verbs_context *context_ex)
 {
+#if 0
 	free(context_ex->priv);
+#endif
 	close(context_ex->context.cmd_fd);
+#if 0
 	close(context_ex->context.async_fd);
+#endif
 	ibverbs_device_put(context_ex->context.device);
 }
 
-LATEST_SYMVER_FUNC(ibv_close_device, 1_1, "IBVERBS_1.1",
-		   int,
-		   struct ibv_context *context)
+int devx_close_device(void *ctx)
 {
+	struct devx_context *context = (struct devx_context *)ctx;
 	struct verbs_device *verbs_device = verbs_get_device(context->device);
 
 	verbs_device->ops->free_context(context);
 
 	return 0;
 }
+
+#if 0
 
 LATEST_SYMVER_FUNC(ibv_get_async_event, 1_1, "IBVERBS_1.1",
 		   int,
@@ -431,3 +358,5 @@ LATEST_SYMVER_FUNC(ibv_ack_async_event, 1_1, "IBVERBS_1.1",
 		return;
 	}
 }
+
+#endif

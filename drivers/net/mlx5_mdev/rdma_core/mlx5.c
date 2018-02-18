@@ -75,12 +75,14 @@ static const struct verbs_match_ent hca_table[] = {
 	HCA(MELLANOX, 0x101c),	/* ConnectX-6 VF */
 	HCA(MELLANOX, 0xa2d2),	/* BlueField integrated ConnectX-5 network controller */
 	HCA(MELLANOX, 0xa2d3),	/* BlueField integrated ConnectX-5 network controller VF */
-	{}
+	{0}
 };
 
+int mlx5_single_threaded;
 uint32_t mlx5_debug_mask = 0;
 int mlx5_freeze_on_error_cqe;
 
+#if 0
 static const struct verbs_context_ops mlx5_ctx_common_ops = {
 	.query_device  = mlx5_query_device,
 	.query_port    = mlx5_query_port,
@@ -436,6 +438,7 @@ static void mlx5_read_env(struct ibv_device *ibdev, struct mlx5_context *ctx)
 	}
 
 }
+#endif
 
 static int get_total_uuars(int page_size)
 {
@@ -610,6 +613,7 @@ static int mlx5_cmd_get_context(struct mlx5_context *context,
 				   &resp->ibv_resp, resp_len);
 }
 
+#if 0
 static int mlx5_map_internal_clock(struct mlx5_device *mdev,
 				   struct ibv_context *ibv_ctx)
 {
@@ -833,6 +837,7 @@ COMPAT_SYMVER_FUNC(mlx5dv_init_obj, 1_0, "MLX5_1.0",
 	}
 	return ret;
 }
+#endif
 
 static off_t get_uar_mmap_offset(int idx, int page_size, int command)
 {
@@ -887,6 +892,7 @@ out:
 	return uar->reg;
 }
 
+#if 0
 int mlx5dv_set_context_attr(struct ibv_context *ibv_ctx,
 			enum mlx5dv_set_ctx_attr_type type, void *attr)
 {
@@ -938,6 +944,7 @@ repeat:
 
 	return 0;
 }
+#endif
 
 static void adjust_uar_info(struct mlx5_device *mdev,
 			    struct mlx5_context *context,
@@ -968,8 +975,10 @@ static struct verbs_context *mlx5_alloc_context(struct ibv_device *ibdev,
 	int				j;
 	struct mlx5_device	       *mdev = to_mdev(ibdev);
 	struct verbs_context	       *v_ctx;
+#if 0
 	struct ibv_port_attr		port_attr;
 	struct ibv_device_attr_ex	device_attr;
+#endif
 	int				k;
 	int				bfi;
 	int				num_sys_page_map;
@@ -1101,6 +1110,7 @@ static struct verbs_context *mlx5_alloc_context(struct ibv_device *ibdev,
 			}
 		}
 	}
+#if 0
 	context->hca_core_clock = NULL;
 	if (resp.response_length + sizeof(resp.ibv_resp) >=
 	    offsetof(struct mlx5_alloc_ucontext_resp, hca_core_clock_offset) +
@@ -1145,6 +1155,7 @@ static struct verbs_context *mlx5_alloc_context(struct ibv_device *ibdev,
 		if (!mlx5_query_port(&v_ctx->context, j + 1, &port_attr))
 			context->cached_link_layer[j] = port_attr.link_layer;
 	}
+#endif
 
 	return v_ctx;
 
@@ -1182,11 +1193,13 @@ static void mlx5_free_context(struct ibv_context *ibctx)
 		if (context->uar[i].reg)
 			munmap(context->uar[i].reg, page_size);
 	}
+#if 0
 	if (context->hca_core_clock)
 		munmap(context->hca_core_clock - context->core_clock.offset,
 		       page_size);
 	if (context->clock_info_page)
 		munmap((void *)context->clock_info_page, page_size);
+#endif
 	close_debug_file(context);
 
 	verbs_uninit_context(&context->ibv_ctx);
@@ -1214,7 +1227,7 @@ static struct verbs_device *mlx5_device_alloc(struct verbs_sysfs_dev *sysfs_dev)
 	return &dev->verbs_dev;
 }
 
-static const struct verbs_device_ops mlx5_dev_ops = {
+const struct verbs_device_ops mlx5_dev_ops = {
 	.name = "mlx5",
 	.match_min_abi_version = MLX5_UVERBS_MIN_ABI_VERSION,
 	.match_max_abi_version = MLX5_UVERBS_MAX_ABI_VERSION,
@@ -1224,4 +1237,4 @@ static const struct verbs_device_ops mlx5_dev_ops = {
 	.alloc_context = mlx5_alloc_context,
 	.free_context = mlx5_free_context,
 };
-PROVIDER_DRIVER(mlx5_dev_ops);
+//PROVIDER_DRIVER(mlx5_dev_ops);

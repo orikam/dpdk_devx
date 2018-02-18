@@ -41,12 +41,20 @@ SRCS-$(CONFIG_RTE_LIBRTE_MLX5_MDEV_PMD) += mlx5_mdev_dbrec.c
 SRCS-$(CONFIG_RTE_LIBRTE_MLX5_MDEV_PMD) += mlx5_prm_commands.c
 SRCS-$(CONFIG_RTE_LIBRTE_MLX5_MDEV_PMD) += cmd_ioctl.c
 SRCS-$(CONFIG_RTE_LIBRTE_MLX5_MDEV_PMD) += devx.c
+SRCS-$(CONFIG_RTE_LIBRTE_MLX5_MDEV_PMD) += rdma_core/device.c
+SRCS-$(CONFIG_RTE_LIBRTE_MLX5_MDEV_PMD) += rdma_core/cmd.c
+SRCS-$(CONFIG_RTE_LIBRTE_MLX5_MDEV_PMD) += rdma_core/init.c
+SRCS-$(CONFIG_RTE_LIBRTE_MLX5_MDEV_PMD) += rdma_core/sysfs.c
+SRCS-$(CONFIG_RTE_LIBRTE_MLX5_MDEV_PMD) += rdma_core/mlx5.c
+SRCS-$(CONFIG_RTE_LIBRTE_MLX5_MDEV_PMD) += rdma_core/ccan/str.c
+SRCS-$(CONFIG_RTE_LIBRTE_MLX5_MDEV_PMD) += rdma_core/ccan/list.c
 
 # Basic CFLAGS.
 CFLAGS += -O3
 CFLAGS += -std=c11 -Wall -Wextra
 CFLAGS += -g
 CFLAGS += -I.
+CFLAGS += -I$(SRCDIR)
 CFLAGS += -I$(SRCDIR)/rdma_core
 CFLAGS += -D_BSD_SOURCE
 CFLAGS += -D_DEFAULT_SOURCE
@@ -56,8 +64,11 @@ CFLAGS += -Wno-strict-prototypes
 LDLIBS += -libverbs
 
 # A few warnings cannot be avoided in external headers.
-CFLAGS += -Wno-error=cast-qual
+CFLAGS += -Wno-cast-qual
 CFLAGS += -Wno-unused-parameter
+CFLAGS += -Wno-sign-compare
+CFLAGS += -Wno-pointer-arith
+
 EXPORT_MAP := rte_pmd_mlx5_mdev_version.map
 LIBABIVER := 1
 

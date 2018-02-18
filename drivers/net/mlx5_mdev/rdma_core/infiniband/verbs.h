@@ -43,6 +43,14 @@
 #include <string.h>
 #include <linux/types.h>
 #include <stdint.h>
+
+#include "devx.h"
+#include "devx_priv.h"
+
+#define ibv_device devx_device
+#define ibv_context devx_context
+
+#if 0
 #include <infiniband/verbs_api.h>
 
 #ifdef __cplusplus
@@ -1519,12 +1527,14 @@ struct _ibv_device_ops {
 	struct ibv_context *	(*_dummy1)(struct ibv_device *device, int cmd_fd);
 	void			(*_dummy2)(struct ibv_context *context);
 };
+#endif
 
 enum {
 	IBV_SYSFS_NAME_MAX	= 64,
 	IBV_SYSFS_PATH_MAX	= 256
 };
 
+#if 0
 struct ibv_device {
 	struct _ibv_device_ops	_ops;
 	enum ibv_node_type	node_type;
@@ -1655,8 +1665,10 @@ struct ibv_values_ex {
 	uint32_t	comp_mask;
 	struct timespec raw_clock;
 };
+#endif
 
 struct verbs_context {
+#if 0
 	/*  "grows up" - new fields go here */
 	struct ibv_pd *(*alloc_parent_domain)(struct ibv_context *context,
 					      struct ibv_parent_domain_init_attr *attr);
@@ -1698,14 +1710,17 @@ struct verbs_context {
 					     struct ibv_xrcd_init_attr *xrcd_init_attr);
 	int			(*close_xrcd)(struct ibv_xrcd *xrcd);
 	uint64_t _ABI_placeholder3;
+#endif
 	size_t   sz;			/* Must be immediately before struct ibv_context */
 	struct ibv_context context;	/* Must be last field in the struct */
 };
 
 static inline struct verbs_context *verbs_get_ctx(struct ibv_context *ctx)
 {
+#if 0
 	if (ctx->abi_compat != __VERBS_ABI_IS_EXTENDED)
 		return NULL;
+#endif
 
 	/* open code container_of to not pollute the global namespace */
 	return (struct verbs_context *)(((uint8_t *)ctx) -
@@ -1713,6 +1728,7 @@ static inline struct verbs_context *verbs_get_ctx(struct ibv_context *ctx)
 						 context));
 }
 
+#if 0
 #define verbs_get_ctx_op(ctx, op) ({ \
 	struct verbs_context *__vctx = verbs_get_ctx(ctx); \
 	(!__vctx || (__vctx->sz < sizeof(*__vctx) - offsetof(struct verbs_context, op)) || \
@@ -2583,5 +2599,6 @@ static inline int ibv_is_qpt_supported(uint32_t caps, enum ibv_qp_type qpt)
 
 #  undef __attribute_const
 
+#endif
 
 #endif /* INFINIBAND_VERBS_H */

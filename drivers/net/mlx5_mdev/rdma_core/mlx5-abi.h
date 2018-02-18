@@ -130,6 +130,7 @@ struct mlx5_alloc_ucontext_resp {
 	__u32				reserved3;
 };
 
+#if 0
 struct mlx5_create_ah_resp {
 	struct ib_uverbs_create_ah_resp	ibv_resp;
 	__u32				response_length;
@@ -356,5 +357,6 @@ struct mlx5_modify_qp_resp_ex {
 	__u32  response_length;
 	__u32  dctn;
 };
+#endif
 
 #endif /* MLX5_ABI_H */

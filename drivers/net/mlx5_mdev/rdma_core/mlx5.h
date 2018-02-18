@@ -39,14 +39,14 @@
 #include <util/compiler.h>
 
 #include <infiniband/driver.h>
-#include <util/udma_barrier.h>
+//#include <util/udma_barrier.h>
 #include "mlx5-abi.h"
 #include <ccan/list.h>
-#include "bitmap.h"
+//#include "bitmap.h"
 #include <ccan/minmax.h>
 #include "mlx5dv.h"
 
-#include <valgrind/memcheck.h>
+//#include <valgrind/memcheck.h>
 
 #define PFX		"mlx5: "
 
@@ -282,6 +282,7 @@ struct mlx5_context {
 	int				cqe_version;
 	uint8_t				cached_link_layer[MLX5_MAX_PORTS_NUM];
 	unsigned int			cached_device_cap_flags;
+#if 0
 	enum ibv_atomic_cap		atomic_cap;
 	struct {
 		uint64_t                offset;
@@ -290,20 +291,24 @@ struct mlx5_context {
 	void			       *hca_core_clock;
 	const struct mlx5_ib_clock_info *clock_info_page;
 	struct ibv_tso_caps		cached_tso_caps;
+#endif
 	int				cmds_supp_uhw;
 	uint32_t			uar_size;
 	uint64_t			vendor_cap_flags; /* Use enum mlx5_vendor_cap_flags */
+#if 0
 	struct mlx5dv_cqe_comp_caps	cqe_comp_caps;
 	struct mlx5dv_ctx_allocators	extern_alloc;
 	struct mlx5dv_sw_parsing_caps	sw_parsing_caps;
 	struct mlx5dv_striding_rq_caps	striding_rq_caps;
 	uint32_t			tunnel_offloads_caps;
+#endif
 	pthread_mutex_t			dyn_bfregs_mutex; /* protects the dynamic bfregs allocation */
 	uint32_t			num_dyn_bfregs;
 	uint32_t			*count_dyn_bfregs;
 	uint32_t			start_dyn_bfregs_index;
 };
 
+#if 0
 struct mlx5_bitmap {
 	uint32_t		last;
 	uint32_t		top;
@@ -463,6 +468,7 @@ struct mlx5_wq {
 	void			       *qend;
 	uint32_t			*wr_data;
 };
+#endif
 
 struct mlx5_bf {
 	void			       *reg;
@@ -478,6 +484,7 @@ struct mlx5_bf {
 	uint32_t			bfreg_dyn_index;
 };
 
+#if 0
 struct mlx5_mr {
 	struct ibv_mr			ibv_mr;
 	struct mlx5_buf			buf;
@@ -554,6 +561,7 @@ extern int mlx5_stall_cq_poll_min;
 extern int mlx5_stall_cq_poll_max;
 extern int mlx5_stall_cq_inc_step;
 extern int mlx5_stall_cq_dec_step;
+#endif
 extern int mlx5_single_threaded;
 
 static inline unsigned DIV_ROUND_UP(unsigned n, unsigned d)
@@ -578,6 +586,7 @@ static inline struct mlx5_context *to_mctx(struct ibv_context *ibctx)
 	return container_of(ibctx, struct mlx5_context, ibv_ctx.context);
 }
 
+#if 0
 /* to_mpd always returns the real mlx5_pd object ie the protection domain. */
 static inline struct mlx5_pd *to_mpd(struct ibv_pd *ibpd)
 {
@@ -812,8 +821,6 @@ struct ibv_pd *mlx5_alloc_parent_domain(struct ibv_context *context,
 					struct ibv_parent_domain_init_attr *attr);
 
 
-void *mlx5_mmap(struct mlx5_uar_info *uar, int index,
-		int cmd_fd, int page_size, int uar_type);
 static inline void *mlx5_find_uidx(struct mlx5_context *ctx, uint32_t uidx)
 {
 	int tind = uidx >> MLX5_UIDX_TABLE_SHIFT;
@@ -823,6 +830,10 @@ static inline void *mlx5_find_uidx(struct mlx5_context *ctx, uint32_t uidx)
 
 	return NULL;
 }
+#endif
+
+void *mlx5_mmap(struct mlx5_uar_info *uar, int index,
+		int cmd_fd, int page_size, int uar_type);
 
 static inline int mlx5_spin_lock(struct mlx5_spinlock *lock)
 {

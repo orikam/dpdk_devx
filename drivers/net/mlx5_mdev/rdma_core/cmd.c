@@ -54,14 +54,17 @@ int ibv_cmd_get_context(struct verbs_context *context_ex,
 	if (write(context_ex->context.cmd_fd, cmd, cmd_size) != cmd_size)
 		return errno;
 
+#if 0
 	(void) VALGRIND_MAKE_MEM_DEFINED(resp, resp_size);
 
 	context_ex->context.async_fd = resp->async_fd;
 	context_ex->context.num_comp_vectors = resp->num_comp_vectors;
+#endif
 
 	return 0;
 }
 
+#if 0
 static void copy_query_dev_fields(struct ibv_device_attr *device_attr,
 				  struct ib_uverbs_query_device_resp *resp,
 				  uint64_t *raw_fw_ver)
@@ -2052,3 +2055,4 @@ int ibv_cmd_modify_cq(struct ibv_cq *cq,
 
 	return 0;
 }
+#endif

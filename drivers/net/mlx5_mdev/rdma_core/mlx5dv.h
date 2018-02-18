@@ -43,7 +43,7 @@
 #endif /* defined(__SSE3__) */
 
 #include <infiniband/verbs.h>
-#include <infiniband/tm_types.h>
+//#include <infiniband/tm_types.h>
 
 /* Always inline the functions */
 #ifdef __GNUC__
@@ -117,6 +117,7 @@ enum mlx5dv_context_flags {
 	MLX5DV_CONTEXT_FLAGS_CQE_128B_PAD = (1 << 5), /* Support CQE 128B padding */
 };
 
+#if 0
 enum mlx5dv_cq_init_attr_mask {
 	MLX5DV_CQ_INIT_ATTR_MASK_COMPRESSED_CQE	= 1 << 0,
 	MLX5DV_CQ_INIT_ATTR_MASK_FLAGS		= 1 << 1,
@@ -780,12 +781,14 @@ void mlx5dv_set_eth_seg(struct mlx5_wqe_eth_seg *seg, uint8_t cs_flags,
 enum mlx5dv_set_ctx_attr_type {
 	MLX5DV_CTX_ATTR_BUF_ALLOCATORS = 1,
 };
+#endif
 
 enum {
 	MLX5_MMAP_GET_REGULAR_PAGES_CMD	= 0,
 	MLX5_MMAP_GET_NC_PAGES_CMD	= 3,
 };
 
+#if 0
 struct mlx5dv_ctx_allocators {
 	void *(*alloc)(size_t size, void *priv_data);
 	void (*free)(void *ptr, void *priv_data);
@@ -862,5 +865,6 @@ static inline uint64_t mlx5dv_ts_to_ns(struct mlx5dv_clock_info *clock_info,
 
 	return nsec;
 }
+#endif
 
 #endif /* _MLX5DV_H_ */

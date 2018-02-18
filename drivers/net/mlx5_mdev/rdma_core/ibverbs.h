@@ -42,10 +42,12 @@
 
 #define PFX		"libibverbs: "
 
+#if 0
 struct ibv_abi_compat_v2 {
-	struct ibv_comp_channel	channel;
+	struct ibv_comp_channel channel;
 	pthread_mutex_t		in_use;
 };
+#endif
 
 extern int abi_ver;
 extern const struct verbs_context_ops verbs_dummy_ops;
@@ -55,6 +57,7 @@ int ibverbs_init(void);
 void ibverbs_device_put(struct ibv_device *dev);
 void ibverbs_device_hold(struct ibv_device *dev);
 
+#if 0
 struct verbs_ex_private {
 	struct ibv_cq_ex *(*create_cq_ex)(struct ibv_context *context,
 					  struct ibv_cq_init_attr_ex *init_attr);
@@ -62,6 +65,7 @@ struct verbs_ex_private {
 	uint64_t unsupported_ioctls;
 	uint32_t driver_id;
 };
+#endif
 
 #define IBV_INIT_CMD(cmd, size, opcode)					\
 	do {								\
@@ -78,12 +82,14 @@ struct verbs_ex_private {
 		(cmd)->response  = (uintptr_t) (out);			\
 	} while (0)
 
+#if 0
 static inline uint32_t _cmd_ex(uint32_t cmd)
 {
 	return (IB_USER_VERBS_CMD_FLAG_EXTENDED
 		<< IB_USER_VERBS_CMD_FLAGS_SHIFT) |
 	       cmd;
 }
+#endif
 
 #define IBV_INIT_CMD_RESP_EX_V(cmd, cmd_size, size, opcode, out, resp_size,\
 		outsize)						   \

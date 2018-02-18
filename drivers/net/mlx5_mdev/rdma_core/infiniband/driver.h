@@ -43,6 +43,7 @@
 #include <stdbool.h>
 #include <rdma/rdma_user_ioctl_cmds.h>
 
+#if 0
 struct verbs_device;
 
 enum verbs_xrcd_mask {
@@ -88,6 +89,7 @@ struct verbs_qp {
 	uint32_t		comp_mask;
 	struct verbs_xrcd       *xrcd;
 };
+#endif
 
 enum {
 	VERBS_MATCH_SENTINEL = 0,
@@ -170,6 +172,7 @@ struct verbs_device {
 	struct verbs_sysfs_dev *sysfs;
 };
 
+#if 0
 /*
  * Must change the PRIVATE IBVERBS_PRIVATE_ symbol if this is changed. This is
  * the union of every op the driver can support. If new elements are added to
@@ -271,6 +274,7 @@ struct verbs_context_ops {
 			void *addr, size_t length, int access);
 	int (*resize_cq)(struct ibv_cq *cq, int cqe);
 };
+#endif
 
 static inline struct verbs_device *
 verbs_get_device(const struct ibv_device *dev)
@@ -314,16 +318,19 @@ int verbs_init_context(struct verbs_context *context_ex,
 		       struct ibv_device *device, int cmd_fd,
 		       uint32_t driver_id);
 void verbs_uninit_context(struct verbs_context *context);
+#if 0
 void verbs_set_ops(struct verbs_context *vctx,
 		   const struct verbs_context_ops *ops);
 
 void verbs_init_cq(struct ibv_cq *cq, struct ibv_context *context,
 		       struct ibv_comp_channel *channel,
 		       void *cq_context);
+#endif
 
 int ibv_cmd_get_context(struct verbs_context *context,
 			struct ibv_get_context *cmd, size_t cmd_size,
 			struct ib_uverbs_get_context_resp *resp, size_t resp_size);
+#if 0
 int ibv_cmd_query_device(struct ibv_context *context,
 			 struct ibv_device_attr *device_attr,
 			 uint64_t *raw_fw_ver,
@@ -489,6 +496,7 @@ int ibv_cmd_create_rwq_ind_table(struct ibv_context *context,
 int ibv_cmd_destroy_rwq_ind_table(struct ibv_rwq_ind_table *rwq_ind_table);
 int ibv_dontfork_range(void *base, size_t size);
 int ibv_dofork_range(void *base, size_t size);
+#endif
 
 /*
  * sysfs helper functions
@@ -498,6 +506,7 @@ const char *ibv_get_sysfs_path(void);
 int ibv_read_sysfs_file(const char *dir, const char *file,
 			char *buf, size_t size);
 
+#if 0
 static inline int verbs_get_srq_num(struct ibv_srq *srq, uint32_t *srq_num)
 {
 	struct verbs_srq *vsrq = container_of(srq, struct verbs_srq, srq);
@@ -539,5 +548,6 @@ static inline void ibv_initialize_parent_domain(struct ibv_pd *parent_domain,
 	parent_domain->context = contained_pd->context;
 	parent_domain->handle = contained_pd->handle;
 }
+#endif
 
 #endif /* INFINIBAND_DRIVER_H */
