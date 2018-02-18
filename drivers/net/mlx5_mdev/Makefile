@@ -39,12 +39,15 @@ SRCS-$(CONFIG_RTE_LIBRTE_MLX5_MDEV_PMD) += mlx5_mdev.c
 SRCS-$(CONFIG_RTE_LIBRTE_MLX5_MDEV_PMD) += mdev_lib.c
 SRCS-$(CONFIG_RTE_LIBRTE_MLX5_MDEV_PMD) += mlx5_mdev_dbrec.c
 SRCS-$(CONFIG_RTE_LIBRTE_MLX5_MDEV_PMD) += mlx5_prm_commands.c
+SRCS-$(CONFIG_RTE_LIBRTE_MLX5_MDEV_PMD) += cmd_ioctl.c
+SRCS-$(CONFIG_RTE_LIBRTE_MLX5_MDEV_PMD) += devx.c
 
 # Basic CFLAGS.
 CFLAGS += -O3
 CFLAGS += -std=c11 -Wall -Wextra
 CFLAGS += -g
 CFLAGS += -I.
+CFLAGS += -I$(SRCDIR)/rdma_core
 CFLAGS += -D_BSD_SOURCE
 CFLAGS += -D_DEFAULT_SOURCE
 CFLAGS += -D_XOPEN_SOURCE=600
@@ -54,7 +57,7 @@ LDLIBS += -libverbs
 
 # A few warnings cannot be avoided in external headers.
 CFLAGS += -Wno-error=cast-qual
-
+CFLAGS += -Wno-unused-parameter
 EXPORT_MAP := rte_pmd_mlx5_mdev_version.map
 LIBABIVER := 1
 
@@ -66,7 +69,7 @@ endif
 
 # User-defined CFLAGS.
 ifeq ($(CONFIG_RTE_LIBRTE_MLX5_MDEV_DEBUG),y)
-CFLAGS += -pedantic -UNDEBUG -DPEDANTIC
+CFLAGS += -UNDEBUG -DPEDANTIC
 else
 CFLAGS += -DNDEBUG -UPEDANTIC
 endif
@@ -81,5 +84,3 @@ export AUTO_CONFIG_CFLAGS = -Wno-error
 ifndef V
 AUTOCONF_OUTPUT := >/dev/null
 endif
-
-clean: clean_mlx5_mdev
