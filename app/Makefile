@@ -19,4 +19,6 @@ ifeq ($(CONFIG_RTE_LIBRTE_EVENTDEV),y)
 DIRS-$(CONFIG_RTE_APP_EVENTDEV) += test-eventdev
 endif
 
+DIRS-$(CONFIG_RTE_LIBRTE_MLX5_MDEV_TEST) += test-devx
+
 include $(RTE_SDK)/mk/rte.subdir.mk

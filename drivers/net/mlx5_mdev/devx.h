@@ -2,6 +2,7 @@
 #define __DEVX_H__
 
 #include <linux/limits.h>
+#include <stdint.h>
 
 struct devx_device {
 	char			name[NAME_MAX];
