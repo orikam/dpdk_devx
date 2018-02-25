@@ -126,7 +126,7 @@ struct list_node *list_check_node(const struct list_node *n,
  * Example:
  *	static LIST_HEAD(my_global_list);
  */
-#define LIST_HEAD(name) \
+#define __LIST_HEAD(name) \
 	struct list_head name = LIST_HEAD_INIT(name)
 
 /**

@@ -3,6 +3,7 @@
 
 #include <linux/limits.h>
 #include <stdint.h>
+#include <rte_bus_pci.h>
 
 struct devx_device {
 	char			name[NAME_MAX];
@@ -38,5 +39,8 @@ int devx_umem_unreg(struct devx_obj_handle *obj);
 struct devx_obj_handle *devx_fs_rule_add(void *ctx,
 					 void *in, uint32_t inlen);
 int devx_fs_rule_del(struct devx_obj_handle *obj);
+
+int devx_device_to_pci_addr(const struct devx_device *device,
+			    struct rte_pci_addr *pci_addr);
 
 #endif

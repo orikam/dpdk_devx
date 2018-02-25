@@ -336,7 +336,7 @@ static void try_all_drivers(struct list_head *sysfs_list,
 
 int ibverbs_get_device_list(struct list_head *device_list)
 {
-	LIST_HEAD(sysfs_list);
+	__LIST_HEAD(sysfs_list);
 	struct verbs_sysfs_dev *sysfs_dev;
 	struct verbs_device *vdev, *tmp;
 	unsigned int num_devices = 0;
