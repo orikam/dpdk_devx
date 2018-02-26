@@ -43,4 +43,7 @@ int devx_fs_rule_del(struct devx_obj_handle *obj);
 int devx_device_to_pci_addr(const struct devx_device *device,
 			    struct rte_pci_addr *pci_addr);
 
+void *devx_alloc_db(void *ctx, uint32_t *mem_id, size_t *off);
+void devx_free_db(void *ctx, void *db);
+
 #endif

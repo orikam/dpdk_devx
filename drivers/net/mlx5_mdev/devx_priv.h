@@ -6,4 +6,9 @@ struct devx_context {
 	int cmd_fd;
 };
 
+struct devx_obj_handle {
+	struct devx_context *ctx;
+	uint32_t handle;
+};
+
 #endif

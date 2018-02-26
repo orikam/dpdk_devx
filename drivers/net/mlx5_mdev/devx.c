@@ -4,11 +4,6 @@
 #include "devx.h"
 #include "devx_priv.h"
 
-struct devx_obj_handle {
-	struct devx_context *ctx;
-	uint32_t handle;
-};
-
 int devx_cmd(void *ctx,
 	     void *in, size_t inlen,
 	     void *out, size_t outlen)
@@ -76,7 +71,7 @@ struct devx_obj_handle *devx_umem_reg(void *ctx,
 			       UVERBS_OBJECT_MLX5_MDEV_UMEM,
 			       MLX5_MDEV_UMEM_REG,
 			       5);
-	struct ib_uverbs_attr *handle, *aid;
+	struct ib_uverbs_attr *handle;
 	struct devx_obj_handle *obj;
 	int ret = ENOMEM;
 
@@ -89,13 +84,12 @@ struct devx_obj_handle *devx_umem_reg(void *ctx,
 	fill_attr_in_uint64(cmd, MLX5_MDEV_UMEM_REG_ADDR, (intptr_t)addr);
 	fill_attr_in_uint64(cmd, MLX5_MDEV_UMEM_REG_LEN, size);
 	fill_attr_in_uint32(cmd, MLX5_MDEV_UMEM_REG_ACCESS, access);
-	aid = fill_attr_out_obj(cmd, MLX5_MDEV_UMEM_REG_ID);
+	fill_attr_out(cmd, MLX5_MDEV_UMEM_REG_ID, id, sizeof(*id));
 
 	ret = execute_ioctl(obj->ctx->cmd_fd, cmd);
 	if (ret)
 		goto err;
 	obj->handle = handle->data;
-	*id = aid->data;
 
 	return obj;
 err:
