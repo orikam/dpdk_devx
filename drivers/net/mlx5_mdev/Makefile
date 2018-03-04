@@ -37,8 +37,9 @@ LIB = librte_pmd_mlx5_mdev.a
 
 SRCS-$(CONFIG_RTE_LIBRTE_MLX5_MDEV_PMD) += mlx5_mdev.c
 SRCS-$(CONFIG_RTE_LIBRTE_MLX5_MDEV_PMD) += mdev_lib.c
-SRCS-$(CONFIG_RTE_LIBRTE_MLX5_MDEV_PMD) += mlx5_mdev_dbrec.c
 SRCS-$(CONFIG_RTE_LIBRTE_MLX5_MDEV_PMD) += mlx5_prm_commands.c
+SRCS-$(CONFIG_RTE_LIBRTE_MLX5_MDEV_PMD) += mlx5_mdev_ethdev.c
+SRCS-$(CONFIG_RTE_LIBRTE_MLX5_MDEV_PMD) += mlx5_mdev_mac.c
 SRCS-$(CONFIG_RTE_LIBRTE_MLX5_MDEV_PMD) += cmd_ioctl.c
 SRCS-$(CONFIG_RTE_LIBRTE_MLX5_MDEV_PMD) += devx.c
 SRCS-$(CONFIG_RTE_LIBRTE_MLX5_MDEV_PMD) += devx_uar.c

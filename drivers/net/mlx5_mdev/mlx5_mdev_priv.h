@@ -6,7 +6,7 @@
 #define MLX5_MDEV_PRIV_H_
 #include <sys/ioctl.h>
 #include <net/if.h>
-
+#include "mlx5_mdev_defs.h"
 #include "mdev_lib.h"
 #include "devx.h"
 
@@ -23,6 +23,46 @@ enum {
 	PCI_DEVICE_ID_MELLANOX_CONNECTX5VF = 0x1018,
 	PCI_DEVICE_ID_MELLANOX_CONNECTX5EX = 0x1019,
 	PCI_DEVICE_ID_MELLANOX_CONNECTX5EXVF = 0x101a,
+};
+
+/* MPW mode. */
+enum mlx5_mpw_mode {
+	MLX5_MPW_DISABLED,
+	MLX5_MPW,
+	MLX5_MPW_ENHANCED, /* Enhanced Multi-Packet Send WQE, a.k.a MPWv2. */
+};
+
+/* Default PMD specific parameter value. */
+#define MLX5_ARG_UNSET (-1)
+
+/*
+ * Device configuration structure.
+ *
+ * Merged configuration from:
+ *
+ *  - Device capabilities,
+ *  - User device parameters disabled features.
+ */
+struct mlx5_mdev_dev_config {
+	unsigned int hw_csum:1; /* Checksum offload is supported. */
+	unsigned int hw_csum_l2tun:1; /* Same for L2 tunnels. */
+	unsigned int hw_vlan_strip:1; /* VLAN stripping is supported. */
+	unsigned int hw_fcs_strip:1; /* FCS stripping is supported. */
+	unsigned int hw_padding:1; /* End alignment padding is supported. */
+	unsigned int sriov:1; /* This is a VF or PF with VF devices. */
+	unsigned int mps:2; /* Multi-packet send supported mode. */
+	unsigned int tunnel_en:1; /* Whether tunnel is supported. */
+	unsigned int flow_counter_en:1; /* Whether flow counter is supported. */
+	unsigned int cqe_comp:1; /* CQE compression is enabled. */
+	unsigned int tso:1; /* Whether TSO is supported. */
+	unsigned int tx_vec_en:1; /* Tx vector is enabled. */
+	unsigned int rx_vec_en:1; /* Rx vector is enabled. */
+	unsigned int mpw_hdr_dseg:1; /* Enable DSEGs in the title WQEBB. */
+	unsigned int tso_max_payload_sz; /* Maximum TCP payload for TSO. */
+	unsigned int ind_table_max_size; /* Maximum indirection table size. */
+	int txq_inline; /* Maximum packet size for inlining. */
+	int txqs_inline; /* Queue number threshold for inlining. */
+	int inline_max_packet_sz; /* Max packet size for inlining. */
 };
 
 struct mlx5_mdev_db_page {
@@ -77,18 +117,35 @@ struct mdev_sq_attr {
 	struct mdev_wq_attr wq;
 };
 
+struct mdev_pd {
+	int32_t pd;
+	struct devx_obj_handle *pd_object;
+};
+struct mdev_td {
+	int32_t td;
+	struct devx_obj_handle *td_object;
+};
+struct mdev_uar {
+	uint32_t uar_index;
+	uint64_t *uar;
+};
 struct mlx5_mdev_priv {
-	struct rte_eth_dev *edev;
-	void	*base_addr;
-	void *dev;
+	struct rte_eth_dev *dev;
+	char ibdev_path[256]; /* IB device path for secondary */
+//	void	*base_addr;
+	void *ctx;
 	struct mlx5_mdev_db_page *db_page;
+	struct mdev_pd pd;
+	struct mdev_td td;
 	int32_t page_size;
 	int32_t cache_line_size;
-	int32_t pd;
-	uint64_t *uar;
-	uint32_t uar_index;
-	struct devx_obj_handle *pd_object;
+	struct ether_addr mac[MLX5_MAX_MAC_ADDRESSES]; /* MAC addresses. */
+	struct mdev_uar uar;
+	void *uar_base; /* Reserved address space for UAR mapping */
+	uint16_t mtu; /* Configured MTU. */
+	uint8_t port; /* Physical port number. */
 	rte_spinlock_t lock; /* Lock for control functions. */
+	struct mlx5_mdev_dev_config config;
 };
 
 struct mdev_cq {
@@ -166,9 +223,25 @@ mlx5_mdev_create_sq(struct mlx5_mdev_priv *priv,
 		    struct mdev_sq_attr *sq_attr);
 
 int mlx5_mdev_alloc_pd(struct mlx5_mdev_priv *priv);
-
+int mlx5_mdev_alloc_td(struct mlx5_mdev_priv *priv);
 int priv_get_mac(struct mlx5_mdev_priv *, uint8_t (*)[ETHER_ADDR_LEN]);
 int
 priv_ifreq(const struct mlx5_mdev_priv *priv, int req, struct ifreq *ifr);
+
+/* mlx5_ethdev.c */
+
+struct mlx5_mdev_priv *mlx5_get_priv(struct rte_eth_dev *dev);
+int priv_get_ifname(const struct mlx5_mdev_priv *, char (*)[IFNAMSIZ]);
+int priv_ifreq(const struct mlx5_mdev_priv *, int req, struct ifreq *);
+int priv_is_ib_cntr(const char *);
+int priv_get_cntr_sysfs(struct mlx5_mdev_priv *, const char *, uint64_t *);
+int priv_get_num_vfs(struct mlx5_mdev_priv *, uint16_t *);
+int priv_get_mtu(struct mlx5_mdev_priv *, uint16_t *);
+int priv_set_flags(struct mlx5_mdev_priv *, unsigned int, unsigned int);
+
+/*mlx5_mac.c */
+int
+priv_get_mac(struct mlx5_mdev_priv *priv, uint8_t (*mac)[ETHER_ADDR_LEN]);
+
 #endif
 

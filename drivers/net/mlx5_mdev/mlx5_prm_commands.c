@@ -173,8 +173,8 @@ mlx5_mdev_create_eq(struct mlx5_mdev_priv *priv,
 	}
 	//eq->ctx = ctx;
 	eq->neqe = neqe;
-	eq->buf = rte_eth_dma_zone_reserve(priv->edev, "eq_buffer", 0, eq_size, eq_size,
-						priv->edev->data->numa_node);
+	eq->buf = rte_eth_dma_zone_reserve(priv->dev, "eq_buffer", 0, eq_size, eq_size,
+						priv->dev->data->numa_node);
 	if (!eq->buf)
 		goto err_spl;
 
@@ -221,8 +221,8 @@ mlx5_mdev_create_cq(struct mlx5_mdev_priv *priv,
 	//cq->uar_page = ctx->uar;
 	/* Fill info for create CQ */
 	cq->eqn = cq_attr->eqn;
-	cq->buf = rte_eth_dma_zone_reserve(priv->edev, "cq_buffer", 0, cq_size, cq_size,
-						priv->edev->data->numa_node);
+	cq->buf = rte_eth_dma_zone_reserve(priv->dev, "cq_buffer", 0, cq_size, cq_size,
+						priv->dev->data->numa_node);
 	cq->dev = dev;
 	ret = mdev_priv_create_cq(dev, cq);
 	if (ret)
@@ -288,8 +288,8 @@ mlx5_mdev_create_sq(struct mlx5_mdev_priv *priv,
 	sq->tisn = sq_attr->tisn;
 	sq->wq.dbr_addr = mlx5_get_dbrec(priv);
 	sq->wq.uar_page = sq_attr->uar;
-	sq->wq.buf = rte_eth_dma_zone_reserve(priv->edev, "sq_buffer", 0, sq_attr->nelements * 64, 4096,
-							priv->edev->data->numa_node);
+	sq->wq.buf = rte_eth_dma_zone_reserve(priv->dev, "sq_buffer", 0, sq_attr->nelements * 64, 4096,
+							priv->dev->data->numa_node);
 	ret = mdev_priv_create_sq(dev, sq);
 	printf("create sq res == %d\n", ret);
 	if (ret)
@@ -307,12 +307,32 @@ int mlx5_mdev_alloc_pd(struct mlx5_mdev_priv *priv)
 	uint32_t status;
 
 	MLX5_SET(alloc_pd_in, in, opcode, MLX5_CMD_OP_ALLOC_PD);
-	priv->pd_object = devx_obj_create(priv->dev, in, sizeof(in), out, sizeof(out));
-	if (!priv->pd_object)
+	priv->pd.pd_object = devx_obj_create(priv->ctx, in, sizeof(in), out, sizeof(out));
+	if (!priv->pd.pd_object)
 		return 1;
 
 	status = MLX5_GET(alloc_pd_out, out, status);
-	priv->pd = MLX5_GET(alloc_pd_out, out, pd);
-	printf("oooOri pd value %d\n",priv->pd);
+	priv->pd.pd = MLX5_GET(alloc_pd_out, out, pd);
+	printf("oooOri pd status %d pd value %d\n",status, priv->pd.pd);
+	return status;
+}
+
+int mlx5_mdev_alloc_td(struct mlx5_mdev_priv *priv)
+{
+	uint32_t in[MLX5_ST_SZ_DW(alloc_transport_domain_in)]   = {0};
+	uint32_t out[MLX5_ST_SZ_DW(alloc_transport_domain_out)] = {0};
+	uint32_t status;
+
+
+	MLX5_SET(alloc_transport_domain_in, in, opcode,
+		 MLX5_CMD_OP_ALLOC_TRANSPORT_DOMAIN);
+	priv->td.td_object = devx_obj_create(priv->ctx, in, sizeof(in), out, sizeof(out));
+	if (!priv->td.td_object)
+		return 1;
+
+	priv->td.td = MLX5_GET(alloc_transport_domain_out, out, transport_domain);
+
+	status = MLX5_GET(alloc_pd_out, out, status);
+	printf("oooOri td status %d td value %d\n",status, priv->td.td);
 	return status;
 }
