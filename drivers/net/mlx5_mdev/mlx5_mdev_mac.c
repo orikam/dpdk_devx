@@ -34,7 +34,7 @@
  *   0 on success, -1 on failure and errno is set.
  */
 int
-priv_get_mac(struct mlx5_mdev_priv *priv, uint8_t (*mac)[ETHER_ADDR_LEN])
+mdev_priv_get_mac(struct mlx5_mdev_priv *priv, uint8_t (*mac)[ETHER_ADDR_LEN])
 {
 	struct ifreq request;
 

@@ -7,8 +7,35 @@
 #define RTE_PMD_MLX5_PRM_H_
 
 #include <assert.h>
+
+
+
 #include <rte_vect.h>
-//#include "mlx5_autoconf.h"
+
+enum {
+	MLX5_CQE_OWNER_MASK	= 1,
+	MLX5_CQE_REQ		= 0,
+	MLX5_CQE_RESP_WR_IMM	= 1,
+	MLX5_CQE_RESP_SEND	= 2,
+	MLX5_CQE_RESP_SEND_IMM	= 3,
+	MLX5_CQE_RESP_SEND_INV	= 4,
+	MLX5_CQE_RESIZE_CQ	= 5,
+	MLX5_CQE_NO_PACKET	= 6,
+	MLX5_CQE_REQ_ERR	= 13,
+	MLX5_CQE_RESP_ERR	= 14,
+	MLX5_CQE_INVALID	= 15,
+};
+
+enum {
+	MLX5_CQE_L2_OK = 1 << 0,
+	MLX5_CQE_L3_OK = 1 << 1,
+	MLX5_CQE_L4_OK = 1 << 2,
+};
+
+enum {
+	MLX5_ETH_WQE_L3_CSUM = (1 << 6),
+	MLX5_ETH_WQE_L4_CSUM = (1 << 7),
+};
 
 /* Get CQE owner bit. */
 #define MLX5_CQE_OWNER(op_own) ((op_own) & MLX5_CQE_OWNER_MASK)
@@ -302,5 +329,7 @@ mlx5_flow_mark_get(uint32_t val)
 	return val - 1;
 #endif
 }
+
+
 
 #endif /* RTE_PMD_MLX5_PRM_H_ */

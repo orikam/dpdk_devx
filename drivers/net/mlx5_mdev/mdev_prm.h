@@ -1254,6 +1254,9 @@ struct mlx5_ifc_create_eq_in_bits {
 	u8         reserved_at_300[0x580];
 
 	u8         pas[0x40];
+
+
+
 };
 
 struct mlx5_ifc_destroy_eq_out_bits {

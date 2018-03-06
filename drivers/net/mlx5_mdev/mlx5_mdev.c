@@ -133,12 +133,6 @@ static int get_mac_address(uint8_t *mac_address)
 }
 #endif
 
-static int mlx5_mdev_dev_start(struct rte_eth_dev *edev)
-{
-	edev = edev;
-
-	return 0;
-}
 
 static void mlx5_mdev_infos_get(struct rte_eth_dev *edev, // TODO: review field-by-field, considering dev caps
 				struct rte_eth_dev_info *info)
@@ -160,8 +154,11 @@ static void mlx5_mdev_infos_get(struct rte_eth_dev *edev, // TODO: review field-
 }
 
 static const struct eth_dev_ops mlx5_mdev_dev_ops = { // TODO...
-	.dev_start		= mlx5_mdev_dev_start,
+	.dev_start		= mlx5_mdev_start,
 	.dev_infos_get		= mlx5_mdev_infos_get,
+	.tx_queue_setup = mlx5_tx_queue_setup,
+	.dev_configure = mlx5_dev_configure,
+//	.link_update = mlx5_link_update,
 };
 static struct {
 	struct rte_pci_addr pci_addr; /* associated PCI address */
@@ -614,6 +611,8 @@ mlx5_mdev_init(struct rte_eth_dev *edev)
 			ERROR("TD allocation failure");
 			//goto port_error;
 		}
+		priv->db_page = NULL;
+
 		mlx5_dev[idx].ports |= test;
 
 
@@ -735,8 +734,13 @@ mlx5_mdev_init(struct rte_eth_dev *edev)
 			ERROR(" =========%s: %d", __FUNCTION__, __LINE__);
 			goto port_error;
 		}
+		err = devx_alloc_uar(priv->ctx, &priv->uar.index, &priv->uar.uar);
+		if (err) {
+			ERROR(" =========%s: %d", __FUNCTION__, __LINE__);
+			goto port_error;
+		}
 		/* Configure the first MAC address by default. */
-		if (priv_get_mac(priv, &mac.addr_bytes)) {
+		if (mdev_priv_get_mac(priv, &mac.addr_bytes)) {
 			ERROR("cannot get MAC address, is mlx5_en loaded?"
 			      " (errno: %s)", strerror(errno));
 			err = ENODEV;

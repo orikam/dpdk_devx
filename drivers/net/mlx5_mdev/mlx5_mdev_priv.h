@@ -6,10 +6,14 @@
 #define MLX5_MDEV_PRIV_H_
 #include <sys/ioctl.h>
 #include <net/if.h>
+#include <sys/queue.h>
+#include <rte_ether.h>
+
 #include "mlx5_mdev_defs.h"
 #include "mdev_lib.h"
 #include "devx.h"
-
+#include "mlx5_mdev_prm.h"
+#include "mlx5_mdev_rxtx.h"
 enum {
 	PCI_VENDOR_ID_MELLANOX = 0x15b3,
 };
@@ -25,11 +29,14 @@ enum {
 	PCI_DEVICE_ID_MELLANOX_CONNECTX5EXVF = 0x101a,
 };
 
-/* MPW mode. */
-enum mlx5_mpw_mode {
-	MLX5_MPW_DISABLED,
-	MLX5_MPW,
-	MLX5_MPW_ENHANCED, /* Enhanced Multi-Packet Send WQE, a.k.a MPWv2. */
+enum devx_access_flags {
+	DEVX_ACCESS_LOCAL_WRITE		= 1,
+	DEVX_ACCESS_REMOTE_WRITE		= (1<<1),
+	DEVX_ACCESS_REMOTE_READ		= (1<<2),
+	DEVX_ACCESS_REMOTE_ATOMIC	= (1<<3),
+	DEVX_ACCESS_MW_BIND		= (1<<4),
+	DEVX_ACCESS_ZERO_BASED		= (1<<5),
+	DEVX_ACCESS_ON_DEMAND		= (1<<6),
 };
 
 /* Default PMD specific parameter value. */
@@ -63,6 +70,7 @@ struct mlx5_mdev_dev_config {
 	int txq_inline; /* Maximum packet size for inlining. */
 	int txqs_inline; /* Queue number threshold for inlining. */
 	int inline_max_packet_sz; /* Max packet size for inlining. */
+
 };
 
 struct mlx5_mdev_db_page {
@@ -73,19 +81,19 @@ struct mlx5_mdev_db_page {
 };
 
 struct mdev_cq_attr {
-	void *dev;
+	void *ctx;
 	uint32_t cqe; /* Minimum number of entries required for CQ */
 	uint32_t create_flags;
 	uint32_t eqn;
 };
 
 struct mdev_tis_attr {
-	void *dev;
+	void *ctx;
 	uint32_t td;
 };
 
 struct mdev_eq_attr {
-	void *dev;
+	void *ctx;
 	uint32_t eqe; /* Minimum number of entries required for CQ */
 	uint32_t uar;
 };
@@ -106,7 +114,7 @@ struct mdev_wq_attr {
 };
 
 struct mdev_sq_attr {
-	void *dev;
+	void *ctx;
 	uint32_t nelements;
 	uint8_t rlkey;
 	uint8_t fre;
@@ -126,9 +134,21 @@ struct mdev_td {
 	struct devx_obj_handle *td_object;
 };
 struct mdev_uar {
-	uint32_t uar_index;
-	uint64_t *uar;
+	uint32_t index;
+	void *uar;
 };
+
+struct mdev_mem_reg {
+	uint32_t index;
+	struct devx_obj_handle *object;
+};
+
+struct mdev_dbr{
+	size_t addr;
+	uint32_t index;
+	struct devx_obj_handle *object;
+};
+
 struct mlx5_mdev_priv {
 	struct rte_eth_dev *dev;
 	char ibdev_path[256]; /* IB device path for secondary */
@@ -146,12 +166,18 @@ struct mlx5_mdev_priv {
 	uint8_t port; /* Physical port number. */
 	rte_spinlock_t lock; /* Lock for control functions. */
 	struct mlx5_mdev_dev_config config;
+	struct mlx5_txq_data *(*txqs)[]; /* TX queues. */
+	unsigned int txqs_n; /* TX queues array size. */
+	LIST_HEAD(mr, mlx5_mdev_mr) mr; /* Memory region. */
+	LIST_HEAD(txq, mlx5_txq_ctrl) txqsctrl; /* DPDK Tx queues. */
+	LIST_HEAD(txqmdev, mlx5_txq_mdev) txqsmdev; /* mdev Tx queues. */
 };
 
 struct mdev_cq {
 	void *dev;
 	const struct rte_memzone *buf;
-	uint64_t dbrec;
+	struct mdev_mem_reg mem;
+	struct mdev_dbr dbrec;
 	uint32_t cqe_size;
 	uint32_t uar_page;
 	uint32_t cqn;
@@ -162,8 +188,9 @@ struct mdev_cq {
 };
 
 struct mdev_eq {
-	void *dev;
+	void *ctx;
 	const struct rte_memzone *buf;
+	struct mdev_mem_reg mem;
 	uint64_t dbrec;
 	uint32_t eqe_size;
 	uint32_t uar_page;
@@ -192,19 +219,76 @@ struct mdev_wq {
 	uint8_t page_sz; /* The size of a WQ stride equals 2^log_wq_stride. */
 	uint8_t sz; /* The size of a WQ stride equals 2^log_wq_stride. */
 	const struct rte_memzone *buf;
+	struct mdev_mem_reg mem;
+	struct mdev_dbr dbrec;
 
 };
 
 
 struct mdev_sq {
-	void *dev;
+	void *ctx;
 	uint32_t cqn;
 	uint32_t tisn;
+	uint32_t sqn;
 	struct mdev_wq wq;
 	struct devx_obj_handle *object;
 };
 
+struct mlx5_mdev_mkey {
+	void *		obj;
+	uint32_t	key;
+};
+
+struct mlx5_mdev_mkey_attr {
+	uint64_t	addr;
+	uint64_t	size;
+	uint32_t	pas_id;
+	uint32_t	pd;
+};
+
 int64_t mlx5_get_dbrec(struct mlx5_mdev_priv *priv);
+
+/**
+ * Lock private structure to protect it from concurrent access in the
+ * control path.
+ *
+ * @param priv
+ *   Pointer to private structure.
+ */
+static inline void
+priv_lock(struct mlx5_mdev_priv *priv)
+{
+	rte_spinlock_lock(&priv->lock);
+}
+
+/**
+ * Try to lock private structure to protect it from concurrent access in the
+ * control path.
+ *
+ * @param priv
+ *   Pointer to private structure.
+ *
+ * @return
+ *   1 if the lock is successfully taken; 0 otherwise.
+ */
+static inline int
+priv_trylock(struct mlx5_mdev_priv *priv)
+{
+	return rte_spinlock_trylock(&priv->lock);
+}
+
+/**
+ * Unlock private structure.
+ *
+ * @param priv
+ *   Pointer to private structure.
+ */
+static inline void
+priv_unlock(struct mlx5_mdev_priv *priv)
+{
+	rte_spinlock_unlock(&priv->lock);
+}
+
 
 
 struct mdev_eq *
@@ -224,9 +308,9 @@ mlx5_mdev_create_sq(struct mlx5_mdev_priv *priv,
 
 int mlx5_mdev_alloc_pd(struct mlx5_mdev_priv *priv);
 int mlx5_mdev_alloc_td(struct mlx5_mdev_priv *priv);
-int priv_get_mac(struct mlx5_mdev_priv *, uint8_t (*)[ETHER_ADDR_LEN]);
-int
-priv_ifreq(const struct mlx5_mdev_priv *priv, int req, struct ifreq *ifr);
+struct mlx5_mdev_mkey *mlx5_mdev_create_mkey(struct mlx5_mdev_priv *priv,
+			struct mlx5_mdev_mkey_attr *mkey_attr);
+
 
 /* mlx5_ethdev.c */
 
@@ -238,10 +322,30 @@ int priv_get_cntr_sysfs(struct mlx5_mdev_priv *, const char *, uint64_t *);
 int priv_get_num_vfs(struct mlx5_mdev_priv *, uint16_t *);
 int priv_get_mtu(struct mlx5_mdev_priv *, uint16_t *);
 int priv_set_flags(struct mlx5_mdev_priv *, unsigned int, unsigned int);
+eth_tx_burst_t
+priv_select_tx_function(struct mlx5_mdev_priv *priv, struct rte_eth_dev *dev);
+int
+mlx5_dev_configure(struct rte_eth_dev *dev);
 
 /*mlx5_mac.c */
 int
-priv_get_mac(struct mlx5_mdev_priv *priv, uint8_t (*mac)[ETHER_ADDR_LEN]);
+mdev_priv_get_mac(struct mlx5_mdev_priv *priv, uint8_t (*mac)[ETHER_ADDR_LEN]);
+
+/* mlx5_mr.c */
+
+struct mlx5_mdev_mr *priv_mr_new(struct mlx5_mdev_priv *, struct rte_mempool *);
+struct mlx5_mdev_mr *priv_mr_get(struct mlx5_mdev_priv *, struct rte_mempool *);
+int priv_mr_release(struct mlx5_mdev_priv *, struct mlx5_mdev_mr *);
+int priv_mr_verify(struct mlx5_mdev_priv *);
+
+/* mlx5_trigger.c */
+
+int mlx5_mdev_start(struct rte_eth_dev *);
+void mlx5_mdev_stop(struct rte_eth_dev *);
+int priv_dev_traffic_enable(struct mlx5_mdev_priv *, struct rte_eth_dev *);
+int priv_dev_traffic_disable(struct mlx5_mdev_priv *, struct rte_eth_dev *);
+int priv_dev_traffic_restart(struct mlx5_mdev_priv *, struct rte_eth_dev *);
+int mlx5_traffic_restart(struct rte_eth_dev *);
 
 #endif
 

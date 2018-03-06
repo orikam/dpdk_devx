@@ -451,3 +451,180 @@ priv_ifreq(const struct mlx5_mdev_priv *priv, int req, struct ifreq *ifr)
 	close(sock);
 	return ret;
 }
+
+/**
+ * Ethernet device configuration.
+ *
+ * Prepare the driver for a given number of TX and RX queues.
+ *
+ * @param dev
+ *   Pointer to Ethernet device structure.
+ *
+ * @return
+ *   0 on success, errno value on failure.
+ */
+static int
+dev_configure(struct rte_eth_dev *dev)
+{
+	struct mlx5_mdev_priv *priv = dev->data->dev_private;
+//	unsigned int rxqs_n = dev->data->nb_rx_queues;
+	unsigned int txqs_n = dev->data->nb_tx_queues;
+//	unsigned int i;
+//	unsigned int j;
+//	unsigned int reta_idx_n;
+//	const uint8_t use_app_rss_key =
+//		!!dev->data->dev_conf.rx_adv_conf.rss_conf.rss_key;
+	printf("oooOri start of configure function\n");
+	uint64_t supp_tx_offloads = mlx5_priv_get_tx_port_offloads(priv);
+	uint64_t tx_offloads = dev->data->dev_conf.txmode.offloads;
+	if ((tx_offloads & supp_tx_offloads) != tx_offloads) {
+			ERROR("Some Tx offloads are not supported "
+			      "requested 0x%" PRIx64 " supported 0x%" PRIx64,
+			      tx_offloads, supp_tx_offloads);
+			// return ENOTSUP;   TODO: Return me
+	}
+	priv->txqs = (void *)dev->data->tx_queues;
+	if (txqs_n != priv->txqs_n) {
+		INFO("%p: TX queues number update: %u -> %u",
+		     (void *)dev, priv->txqs_n, txqs_n);
+		priv->txqs_n = txqs_n;
+	}
+	printf("oooOri end of configure function\n");
+#if 0
+	uint64_t supp_rx_offloads =
+		(mlx5_priv_get_rx_port_offloads(priv) |
+		 mlx5_priv_get_rx_queue_offloads(priv));
+	uint64_t rx_offloads = dev->data->dev_conf.rxmode.offloads;
+
+
+	if ((rx_offloads & supp_rx_offloads) != rx_offloads) {
+		ERROR("Some Rx offloads are not supported "
+		      "requested 0x%" PRIx64 " supported 0x%" PRIx64,
+		      rx_offloads, supp_rx_offloads);
+		// return ENOTSUP; TODO: Return me
+	}
+
+	if (use_app_rss_key &&
+	    (dev->data->dev_conf.rx_adv_conf.rss_conf.rss_key_len !=
+	     rss_hash_default_key_len)) {
+		/* MLX5 RSS only support 40bytes key. */
+		ERROR("===== Invalid RSS key");	// TODO: Remove me
+		// return EINVAL; TODO: Return me
+	}
+	priv->rss_conf.rss_key =
+		rte_realloc(priv->rss_conf.rss_key,
+			    rss_hash_default_key_len, 0);
+	if (!priv->rss_conf.rss_key) {
+		ERROR("cannot allocate RSS hash key memory (%u)", rxqs_n);
+		return ENOMEM;
+	}
+	memcpy(priv->rss_conf.rss_key,
+	       use_app_rss_key ?
+	       dev->data->dev_conf.rx_adv_conf.rss_conf.rss_key :
+	       rss_hash_default_key,
+	       rss_hash_default_key_len);
+	priv->rss_conf.rss_key_len = rss_hash_default_key_len;
+	priv->rss_conf.rss_hf = dev->data->dev_conf.rx_adv_conf.rss_conf.rss_hf;
+	priv->rxqs = (void *)dev->data->rx_queues;
+
+	if (rxqs_n > priv->config.ind_table_max_size) {
+		ERROR("cannot handle this many RX queues (%u)", rxqs_n);
+		return EINVAL;
+	}
+	if (rxqs_n == priv->rxqs_n)
+		return 0;
+	INFO("%p: RX queues number update: %u -> %u",
+	     (void *)dev, priv->rxqs_n, rxqs_n);
+	priv->rxqs_n = rxqs_n;
+	ERROR("=========== %s: %d", __FUNCTION__, __LINE__);
+	/* If the requested number of RX queues is not a power of two, use the
+	 * maximum indirection table size for better balancing.
+	 * The result is always rounded to the next power of two. */
+	reta_idx_n = (1 << log2above((rxqs_n & (rxqs_n - 1)) ?
+				     priv->config.ind_table_max_size :
+				     rxqs_n));
+	if (priv_rss_reta_index_resize(priv, reta_idx_n))
+		return ENOMEM;
+	ERROR("=========== %s: %d", __FUNCTION__, __LINE__);
+	/* When the number of RX queues is not a power of two, the remaining
+	 * table entries are padded with reused WQs and hashes are not spread
+	 * uniformly. */
+	for (i = 0, j = 0; (i != reta_idx_n); ++i) {
+		(*priv->reta_idx)[i] = j;
+		if (++j == rxqs_n)
+			j = 0;
+	}
+#endif
+	return 0;
+}
+
+/**
+ * DPDK callback for Ethernet device configuration.
+ *
+ * @param dev
+ *   Pointer to Ethernet device structure.
+ *
+ * @return
+ *   0 on success, negative errno value on failure.
+ */
+int
+mlx5_dev_configure(struct rte_eth_dev *dev)
+{
+	struct mlx5_mdev_priv *priv = dev->data->dev_private;
+	int ret;
+
+	priv_lock(priv);
+	ret = dev_configure(dev);
+	assert(ret >= 0);
+	priv_unlock(priv);
+	return -ret;
+}
+
+/**
+ * Configure the TX function to use.
+ *
+ * @param priv
+ *   Pointer to private data structure.
+ * @param dev
+ *   Pointer to rte_eth_dev structure.
+ *
+ * @return
+ *   Pointer to selected Tx burst function.
+ */
+eth_tx_burst_t
+priv_select_tx_function(struct mlx5_mdev_priv __rte_unused *priv, struct rte_eth_dev __rte_unused *dev)
+{
+#if 0
+	eth_tx_burst_t tx_pkt_burst = mlx5_tx_burst;
+	struct mlx5_mdev_dev_config *config = &priv->config;
+	uint64_t tx_offloads = dev->data->dev_conf.txmode.offloads;
+	int tso = !!(tx_offloads & (DEV_TX_OFFLOAD_TCP_TSO |
+				    DEV_TX_OFFLOAD_VXLAN_TNL_TSO |
+				    DEV_TX_OFFLOAD_GRE_TNL_TSO));
+	int vlan_insert = !!(tx_offloads & DEV_TX_OFFLOAD_VLAN_INSERT);
+
+	assert(priv != NULL);
+	/* Select appropriate TX function. */
+	if (vlan_insert || tso)
+		return tx_pkt_burst;
+	if (config->mps == MLX5_MPW_ENHANCED) {
+		if (priv_check_vec_tx_support(priv, dev) > 0) {
+			if (priv_check_raw_vec_tx_support(priv, dev) > 0)
+				tx_pkt_burst = mlx5_tx_burst_raw_vec;
+			else
+				tx_pkt_burst = mlx5_tx_burst_vec;
+			DEBUG("selected Enhanced MPW TX vectorized function");
+		} else {
+			tx_pkt_burst = mlx5_tx_burst_empw;
+			DEBUG("selected Enhanced MPW TX function");
+		}
+	} else if (config->mps && (config->txq_inline > 0)) {
+		tx_pkt_burst = mlx5_tx_burst_mpw_inline;
+		DEBUG("selected MPW inline TX function");
+	} else if (config->mps) {
+		tx_pkt_burst = mlx5_tx_burst_mpw;
+		DEBUG("selected MPW TX function");
+	}
+#endif
+	return NULL;
+}
