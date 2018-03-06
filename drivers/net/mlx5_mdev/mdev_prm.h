@@ -1219,7 +1219,9 @@ struct mlx5_ifc_eqc_bits {
 	u8         reserved_at_160[0x8];
 	u8         producer_counter[0x18];
 
-	u8         reserved_at_180[0x80];
+	u8         reserved_at_180[0x60];
+
+	u8         pas_umem_id[0x20];
 };
 
 struct mlx5_ifc_create_eq_out_bits {
@@ -1437,7 +1439,11 @@ struct mlx5_ifc_wq_bits {
 	u8         reserved_at_139[0x4];
 	u8         log_wqe_stride_size[0x3];
 
-	u8         reserved_at_140[0x4c0];
+	u8         reserved_at_140[0x480];
+
+	u8         pas_umem_id[0x20];
+
+	u8         dbr_umem_id[0x20];
 
 	struct mlx5_ifc_cmd_pas_bits pas[16];
 };

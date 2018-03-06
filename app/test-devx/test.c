@@ -3,6 +3,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 #include <rte_byteorder.h>
+#include <rte_pci.h>
 #include "devx.h"
 #include "mdev_prm.h"
 
@@ -66,9 +67,34 @@ void test_mr(void *ctx, int pd) {
 	printf("%s:%d %p %p\n", __func__, __LINE__, mem, mr);
 }
 
-void test_cq(void *ctx);
-void test_cq(void *ctx) {
-	u8 in[MLX5_ST_SZ_BYTES(create_cq_in)] = {0};
+int alloc_eq(void *ctx);
+int alloc_eq(void *ctx) {
+	u8 in[MLX5_ST_SZ_BYTES(create_eq_in) + MLX5_ST_SZ_BYTES(cmd_pas) * 2] = {0};
+	u8 out[MLX5_ST_SZ_BYTES(create_eq_out)] = {0};
+	struct devx_obj_handle *pas, *eq;
+	uint32_t pas_id, uar_id;
+	void *buff, *uar_ptr;
+	int ret;
+
+	buff = mmap(NULL, 0x1000, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANON, -1, 0);
+	pas = devx_umem_reg(ctx, buff, 0x1000, 7, &pas_id);
+
+	ret = devx_alloc_uar(ctx, &uar_id, &uar_ptr);
+	printf("%s:%d %d %d %p\n", __func__, __LINE__, ret, uar_id, uar_ptr);
+
+	MLX5_SET(create_eq_in, in, opcode, MLX5_CMD_OP_CREATE_EQ);
+	//MLX5_SET64(create_eq_in, in, event_bitmask, 1);
+	MLX5_SET(create_eq_in, in, ctx.log_eq_size, 5);
+	MLX5_SET(create_eq_in, in, ctx.uar_page, uar_id);
+	MLX5_SET(create_eq_in, in, ctx.pas_umem_id, pas_id);
+	eq = devx_obj_create(ctx, in, sizeof(in), out, sizeof(out));
+	printf("%s:%d %p %p\n", __func__, __LINE__, eq, pas);
+	return MLX5_GET(create_eq_out, out, eqn);
+}
+
+void test_cq(void *ctx, int eq);
+void test_cq(void *ctx, int eq) {
+	u8 in[MLX5_ST_SZ_BYTES(create_cq_in) + MLX5_ST_SZ_BYTES(cmd_pas) * 2] = {0};
 	u8 out[MLX5_ST_SZ_BYTES(create_cq_out)] = {0};
 	struct devx_obj_handle *pas, *cq;
 	uint32_t pas_id, dbr_id, uar_id;
@@ -85,6 +111,7 @@ void test_cq(void *ctx) {
 	printf("%s:%d %d %d %p\n", __func__, __LINE__, ret, uar_id, uar_ptr);
 
 	MLX5_SET(create_cq_in, in, opcode, MLX5_CMD_OP_CREATE_CQ);
+	MLX5_SET(create_cq_in, in, ctx.c_eqn, eq);
 	MLX5_SET(create_cq_in, in, ctx.cqe_sz, 0);
 	MLX5_SET(create_cq_in, in, ctx.log_cq_size, 5);
 	MLX5_SET(create_cq_in, in, ctx.uar_page, uar_id);
@@ -100,6 +127,12 @@ int main(void) {
 	struct devx_device **list = devx_get_device_list(&num);
 	void *ctx;
 	int pd;
+	int eq;
+	struct rte_pci_addr pci_addr;
+
+	devx_device_to_pci_addr(list[0], &pci_addr);
+	printf("%s:%d %02x:%02x.%x\n", __func__, __LINE__,
+			pci_addr.bus, pci_addr.devid, pci_addr.function);
 
 	ctx = devx_open_device(list[0]);
 	devx_free_device_list(list);
@@ -107,7 +140,9 @@ int main(void) {
 	test_query(ctx);
 	pd = alloc_pd(ctx);
 	test_mr(ctx, pd);
-	test_cq(ctx);
+	eq = alloc_eq(ctx);
+	printf("%d\n", eq);
+	test_cq(ctx, eq);
 
 	devx_close_device(ctx);
 	return 0;
