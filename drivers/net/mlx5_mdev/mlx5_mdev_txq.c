@@ -250,7 +250,7 @@ mlx5_tx_queue_release(void *dpdk_txq)
 	priv_unlock(priv);
 }
 
-
+#if 0
 /**
  * Mmap TX UAR(HW doorbell) pages into reserved UAR address space.
  * Both primary and secondary process do mmap to make UAR address
@@ -310,7 +310,7 @@ priv_tx_uar_remap(struct mlx5_mdev_priv *priv, int fd)
 			/* fixed mmap to specified address in reserved
 			 * address space.
 			 */
-			ret = mmap(addr, page_size,
+			ret = mmap(, page_size,
 				   PROT_WRITE, MAP_FIXED | MAP_SHARED, fd,
 				   txq_ctrl->uar_mmap_offset);
 			if (ret != addr) {
@@ -329,7 +329,7 @@ priv_tx_uar_remap(struct mlx5_mdev_priv *priv, int fd)
 	}
 	return 0;
 }
-
+#endif
 /**
  * Check if the burst function is using eMPW.
  *
@@ -364,13 +364,12 @@ is_empw_burst_func(eth_tx_burst_t __rte_unused tx_pkt_burst)
 struct mlx5_txq_mdev*
 mlx5_priv_txq_mdev_new(struct mlx5_mdev_priv *priv, uint16_t idx)
 {
-	printf("oooOri in mlx5_priv_txq_mdev_new \n");
 
 	struct mlx5_txq_data *txq_data = (*priv->txqs)[idx];
 	struct mlx5_txq_ctrl *txq_ctrl =
 		container_of(txq_data, struct mlx5_txq_ctrl, txq);
 	struct mlx5_txq_mdev tmpl;
-//	struct mlx5_txq_mdev *txq_mdev;
+	struct mlx5_txq_mdev *txq_mdev;
 	union {
 		struct mdev_eq_attr meq_attr;
 		struct mdev_cq_attr mcq_attr;
@@ -408,7 +407,6 @@ mlx5_priv_txq_mdev_new(struct mlx5_mdev_priv *priv, uint16_t idx)
 		((desc / MLX5_TX_COMP_THRESH) - 1) : 1;
 	if (is_empw_burst_func(tx_pkt_burst))
 		cqe_n += MLX5_TX_COMP_THRESH_INLINE_DIV;
-
 	attr.meq_attr.ctx = priv->ctx;
 	attr.meq_attr.eqe = cqe_n;
 	attr.meq_attr.uar = priv->uar.index;
@@ -418,9 +416,10 @@ mlx5_priv_txq_mdev_new(struct mlx5_mdev_priv *priv, uint16_t idx)
 //		goto error;
 	}
 
-	attr.mcq_attr.cqe = cqe_n;
+	attr.mcq_attr.ncqe = log2above(cqe_n);
 	attr.mcq_attr.eqn = meq->eqn;
 	attr.mcq_attr.ctx = priv->ctx;
+	attr.mcq_attr.uar = priv->uar.index;
 	attr.mcq_attr.create_flags = 0;
 	//tmpl.cq = mlx5_glue->create_cq(priv->ctx, cqe_n, NULL, NULL, 0);
 	mcq = mlx5_mdev_create_cq(priv, &attr.mcq_attr);
@@ -441,18 +440,64 @@ mlx5_priv_txq_mdev_new(struct mlx5_mdev_priv *priv, uint16_t idx)
 	attr.sq_attr.cqn = mcq->cqn;
 	attr.sq_attr.tisn = mtis->tisn;
 	attr.sq_attr.fre = 0; // TODO: get real value
-	attr.sq_attr.nelements = cqe_n; //mcq->ncqe;
+	attr.sq_attr.nelements = desc;//FIXME should be based on device attributes
 	attr.sq_attr.inline_mode = 0; // TODO: take from mlx5_ifc_nic_vport_context_bits
 	attr.sq_attr.rlkey = 0;
 	attr.sq_attr.wq.pd = priv->pd.pd;
 	attr.sq_attr.uar = priv->uar.index;
 	msq = mlx5_mdev_create_sq(priv, &attr.sq_attr);
-
+	
+	mlx5_mdev_query_sq(msq, &attr.sq_attr);
+	mlx5_mdev_modify_sq(msq, &attr.sq_attr);
+	mlx5_mdev_query_sq(msq, &attr.sq_attr);
 	if (msq == NULL) {
 		ERROR("%p: msq creation failure", (void *)txq_ctrl);
 //		goto error;
 	}
 
+	txq_mdev = rte_calloc_socket(__func__, 1, sizeof(struct mlx5_txq_mdev), 0,
+					    txq_ctrl->socket);
+	if (!txq_mdev) {
+		ERROR("%p: cannot allocate memory", (void *)txq_ctrl);
+//		goto error;
+	}
+
+//	mlx5 code
+//	txq_data->cqe_n = log2above(cq_info.cqe_cnt);
+//		txq_data->qp_num_8s = tmpl.qp->qp_num << 8;
+//		txq_data->wqes = qp.sq.buf;
+//		txq_data->wqe_n = log2above(qp.sq.wqe_cn`t);
+//		txq_data->qp_db = &qp.dbrec[MLX5_SND_DBR];
+//		txq_ctrl->bf_reg_orig = qp.bf.reg;
+//		txq_data->cq_db = cq_info.dbrec;
+
+
+	txq_data->cqe_n = mcq->ncqe;
+	txq_data->sq_num_8s = msq->sqn << 8;
+	txq_data->wqes = msq->wq.buf->addr; //buf;
+	//FIXME should be check if number of elements in cq equal to num of elements in wq
+	txq_data->wqe_n = log2above(desc);//FIXME should be based on returned value from create sq
+	txq_data->qp_db = (uint32_t *)(msq->wq.dbrec.addr);
+	txq_data->cq_db = (uint32_t *)(mcq->dbrec.addr);
+//	txq_ctrl->bf_reg_orig = (void *)((uint8_t *)priv->uar.uar + 0x800);
+	txq_ctrl->txq.bf_reg = (void *)((uint8_t *)priv->uar.uar + 0x800);
+	txq_data->cqes =
+		(volatile struct mlx5_cqe (*)[])
+		(uintptr_t)mcq->buf->addr;
+	txq_data->cq_ci = 0;
+	#ifndef NDEBUG
+		txq_data->cq_pi = 0;
+	#endif
+
+	txq_data->wqe_ci = 0;
+	txq_data->wqe_pi = 0;
+	txq_mdev->sq = msq;
+	txq_mdev->cq = mcq;
+	txq_mdev->eq = meq;
+	txq_mdev->tis = mtis;
+	rte_atomic32_inc(&txq_mdev->refcnt);
+	LIST_INSERT_HEAD(&priv->txqsmdev, txq_mdev, next);
+	return txq_mdev;
 #if 0 //~~~~
 
 #if 0
@@ -645,8 +690,9 @@ error:
 	if(mtis)
 		claim_zero(mlx5_mdev_destroy_tis(mtis));
 	priv->verbs_alloc_ctx.type = MLX5_VERBS_ALLOC_TYPE_NONE;
-#endif
+
 	return NULL;
+#endif
 }
 
 /**
@@ -873,7 +919,6 @@ mlx5_priv_txq_new(struct mlx5_mdev_priv *priv, uint16_t idx, uint16_t desc,
 		  const struct rte_eth_txconf *conf)
 {
 	struct mlx5_txq_ctrl *tmpl;
-	printf("oooOri in txq_new \n");
 	tmpl = rte_calloc_socket("TXQ", 1,
 				 sizeof(*tmpl) +
 				 desc * sizeof(struct rte_mbuf *),
@@ -899,7 +944,6 @@ mlx5_priv_txq_new(struct mlx5_mdev_priv *priv, uint16_t idx, uint16_t desc,
 	DEBUG("%p: Tx queue %p: refcnt %d", (void *)priv,
 	      (void *)tmpl, rte_atomic32_read(&tmpl->refcnt));
 	LIST_INSERT_HEAD(&priv->txqsctrl, tmpl, next);
-	printf("oooOri in txq_new end\n");
 	return tmpl;
 }
 

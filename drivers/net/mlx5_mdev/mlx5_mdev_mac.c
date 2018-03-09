@@ -119,3 +119,44 @@ mlx5_mdev_mac_addr_set(struct rte_eth_dev *dev, struct ether_addr *mac_addr)
 	DEBUG("%p: setting primary MAC address", (void *)dev);
 	mlx5_mdev_mac_addr_add(dev, mac_addr, 0, 0);
 }
+#if 0
+/**
+ * DPDK callback to add a MAC address.
+ *
+ * @param dev
+ *   Pointer to Ethernet device structure.
+ * @param mac_addr
+ *   MAC address to register.
+ * @param index
+ *   MAC address index.
+ * @param vmdq
+ *   VMDq pool index to associate address with (ignored).
+ *
+ * @return
+ *   0 on success.
+ */
+int
+mlx5_mac_addr_add(struct rte_eth_dev *dev, struct ether_addr *mac,
+		  uint32_t index, uint32_t vmdq)
+{
+	unsigned int i;
+	int ret = 0;
+
+	(void)vmdq;
+	assert(index < MLX5_MAX_MAC_ADDRESSES);
+	/* First, make sure this address isn't already configured. */
+	for (i = 0; (i != MLX5_MAX_MAC_ADDRESSES); ++i) {
+		/* Skip this index, it's going to be reconfigured. */
+		if (i == index)
+			continue;
+		if (memcmp(&dev->data->mac_addrs[i], mac, sizeof(*mac)))
+			continue;
+		/* Address already configured elsewhere, return with error. */
+		return EADDRINUSE;
+	}
+	dev->data->mac_addrs[index] = *mac;
+	if (!dev->data->promiscuous)
+		mlx5_traffic_restart(dev);
+	return ret;
+}
+#endif

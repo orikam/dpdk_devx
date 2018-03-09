@@ -6,7 +6,6 @@
 int devx_alloc_uar(void *context, uint32_t *idx, void **addr)
 {
 	struct mlx5_context *ctx = to_mctx((struct devx_context *)context);
-	struct ib_uverbs_attr *page;
 	DECLARE_COMMAND_BUFFER(cmd,
 			       UVERBS_OBJECT_MLX5_MDEV,
 			       MLX5_MDEV_QUERY_UAR,
@@ -14,12 +13,11 @@ int devx_alloc_uar(void *context, uint32_t *idx, void **addr)
 	int ret;
 
 	fill_attr_in_uint32(cmd, MLX5_MDEV_QUERY_UAR_INDEX, *idx);
-	page = fill_attr_in_uint32(cmd, MLX5_MDEV_QUERY_UAR_PAGE, 0);
-	ret = execute_ioctl(((struct devx_context *)ctx)->cmd_fd, cmd);
-	if (!ret)
+	fill_attr_out(cmd, MLX5_MDEV_QUERY_UAR_PAGE, idx, sizeof(*idx));
+	ret = execute_ioctl(((struct devx_context *)context)->cmd_fd, cmd);
+	if (ret)
 		return ret;
 
-	*addr = &ctx->bfs[page->data];
-	*idx = page->data;
+	*addr = ctx->uar[0].reg;
 	return 0;
 }

@@ -31,19 +31,19 @@ priv_txq_start(struct mlx5_mdev_priv *priv)
 
 	/* Add memory regions to Tx queues. */
 	for (i = 0; i != priv->txqs_n; ++i) {
-		//unsigned int idx = 0;
-		//struct mlx5_mr *mr;
+		unsigned int idx = 0;
+		struct mlx5_mdev_mr *mr;
 		struct mlx5_txq_ctrl *txq_ctrl = mlx5_priv_txq_get(priv, i);
 
 		if (!txq_ctrl)
 			continue;
-#if 0
+
 		LIST_FOREACH(mr, &priv->mr, next) {
 			priv_txq_mp2mr_reg(priv, &txq_ctrl->txq, mr->mp, idx++);
 			if (idx == MLX5_PMD_TX_MP_CACHE)
 				break;
 		}
-#endif
+
 		txq_alloc_elts(txq_ctrl);
 		txq_ctrl->mdev = mlx5_priv_txq_mdev_new(priv, i);
 		if (!txq_ctrl->mdev) {
@@ -51,7 +51,7 @@ priv_txq_start(struct mlx5_mdev_priv *priv)
 			goto error;
 		}
 	}
-	ret = 0; //priv_tx_uar_remap(priv, priv->ctx->cmd_fd);
+//	ret = priv_tx_uar_remap(priv, priv->ctx->cmd_fd);
 	if (ret)
 		goto error;
 	return ret;
@@ -127,9 +127,10 @@ mlx5_mdev_start(struct rte_eth_dev *dev)
 		      (void *)dev, strerror(err));
 		goto error;
 	}
+#endif
 	DEBUG("%p: allocating and configuring hash RX queues", (void *)dev);
 	rte_mempool_walk(mlx5_mp2mr_iter, priv);
-#endif
+
 
 	err = priv_txq_start(priv);
 	if (err) {

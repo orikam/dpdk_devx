@@ -118,6 +118,9 @@ enum {
 	MLX5_CMD_OP_ALLOC_TRANSPORT_DOMAIN        = 0x816,
 	MLX5_CMD_OP_DEALLOC_TRANSPORT_DOMAIN      = 0x817,
 	MLX5_CMD_OP_CREATE_SQ			  = 0x904,
+	MLX5_CMD_OP_MODIFY_SQ			  = 0x905,
+	MLX5_CMD_OP_DESTROY_SQ			  = 0x906,
+	MLX5_CMD_OP_QUERY_SQ			  = 0x907,
 	MLX5_CMD_OP_CREATE_RQ                     = 0x908,
 	MLX5_CMD_OP_MODIFY_RQ                     = 0x909,
 	MLX5_CMD_OP_DESTROY_RQ                    = 0x90a,
@@ -1618,6 +1621,60 @@ struct mlx5_ifc_create_sq_in_bits {
 
 	struct mlx5_ifc_sqc_bits ctx;
 };
+
+struct mlx5_ifc_query_sq_out_bits {
+	u8         status[0x8];
+	u8         reserved_at_8[0x18];
+
+	u8         syndrome[0x20];
+
+	u8         reserved_at_40[0xc0];
+
+	struct mlx5_ifc_sqc_bits sq_context;
+};
+
+struct mlx5_ifc_query_sq_in_bits {
+	u8         opcode[0x10];
+	u8         reserved_at_10[0x10];
+
+	u8         reserved_at_20[0x10];
+	u8         op_mod[0x10];
+
+	u8         reserved_at_40[0x8];
+	u8         sqn[0x18];
+
+	u8         reserved_at_60[0x20];
+};
+
+struct mlx5_ifc_modify_sq_out_bits {
+	u8         status[0x8];
+	u8         reserved_at_8[0x18];
+
+	u8         syndrome[0x20];
+
+	u8         reserved_at_40[0x40];
+};
+
+struct mlx5_ifc_modify_sq_in_bits {
+	u8         opcode[0x10];
+	u8         reserved_at_10[0x10];
+
+	u8         reserved_at_20[0x10];
+	u8         op_mod[0x10];
+
+	u8         sq_state[0x4];
+	u8         reserved_at_44[0x4];
+	u8         sqn[0x18];
+
+	u8         reserved_at_60[0x20];
+
+	u8         modify_bitmask[0x40];
+
+	u8         reserved_at_c0[0x40];
+
+	struct mlx5_ifc_sqc_bits ctx;
+};
+
 enum {
 	MLX5_MODIFY_RQ_IN_MODIFY_BITMASK_VSD = 1ULL << 1,
 	MLX5_MODIFY_RQ_IN_MODIFY_BITMASK_SCATTER_FCS = 1ULL << 2,

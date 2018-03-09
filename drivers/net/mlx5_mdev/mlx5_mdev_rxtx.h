@@ -22,7 +22,7 @@
 #include "mlx5_mdev_defs.h"
 //#include "mlx5_mdev_glue.h"
 #include "mlx5_mdev_prm.h"
-#include "mlx5_mdev_priv.h"
+//#include "mlx5_mdev_priv.h"
 
 #ifndef u8
 #define u8          uint8_t
@@ -61,6 +61,35 @@ struct mlx5_wqe_ctrl_seg {
 };
 
 
+enum {
+	MLX5_CQE_SYNDROME_LOCAL_LENGTH_ERR		= 0x01,
+	MLX5_CQE_SYNDROME_LOCAL_QP_OP_ERR		= 0x02,
+	MLX5_CQE_SYNDROME_LOCAL_PROT_ERR		= 0x04,
+	MLX5_CQE_SYNDROME_WR_FLUSH_ERR			= 0x05,
+	MLX5_CQE_SYNDROME_MW_BIND_ERR			= 0x06,
+	MLX5_CQE_SYNDROME_BAD_RESP_ERR			= 0x10,
+	MLX5_CQE_SYNDROME_LOCAL_ACCESS_ERR		= 0x11,
+	MLX5_CQE_SYNDROME_REMOTE_INVAL_REQ_ERR		= 0x12,
+	MLX5_CQE_SYNDROME_REMOTE_ACCESS_ERR		= 0x13,
+	MLX5_CQE_SYNDROME_REMOTE_OP_ERR			= 0x14,
+	MLX5_CQE_SYNDROME_TRANSPORT_RETRY_EXC_ERR	= 0x15,
+	MLX5_CQE_SYNDROME_RNR_RETRY_EXC_ERR		= 0x16,
+	MLX5_CQE_SYNDROME_REMOTE_ABORTED_ERR		= 0x22,
+};
+
+struct mlx5_err_cqe {
+	uint8_t		rsvd0[32];
+	uint32_t	srqn;
+	uint8_t		rsvd1[18];
+	uint8_t		vendor_err_synd;
+	uint8_t		syndrome;
+	uint32_t	s_wqe_opcode_qpn;
+	uint16_t	wqe_counter;
+	uint8_t		signature;
+	uint8_t		op_own;
+};
+
+
 /////////////////////////////////////////////////////////////////////
 
 struct mlx5_rxq_stats {
@@ -80,6 +109,14 @@ struct mlx5_txq_stats {
 	uint64_t obytes; /**< Total of successfully sent bytes. */
 #endif
 	uint64_t oerrors; /**< Total number of failed transmitted packets. */
+};
+
+struct mlx5_xstats_ctrl {
+	/* Number of device stats. */
+	uint16_t stats_n;
+	/* Index in the device counters table. */
+	uint16_t dev_table_idx[MLX5_MAX_XSTATS];
+	uint64_t base[MLX5_MAX_XSTATS];
 };
 
 struct mlx5_mdev_priv;
@@ -212,6 +249,7 @@ struct mlx5_txq_data {
 	struct mlx5_mdev_mr *mp2mr[MLX5_PMD_TX_MP_CACHE]; /* MR translation table. */
 	struct rte_mbuf *(*elts)[]; /* TX elements. */
 	struct mlx5_txq_stats stats; /* TX queue counters. */
+	struct mlx5_xstats_ctrl xstats_ctrl; /* Extended stats control. */
 } __rte_cache_aligned;
 
 /* Verbs Rx queue elements. */
@@ -308,11 +346,11 @@ uint64_t mlx5_priv_get_tx_port_offloads(struct mlx5_mdev_priv *);
 extern uint32_t mlx5_ptype_table[];
 
 void mlx5_set_ptype_table(void);
-uint16_t mlx5_tx_burst(void *, struct rte_mbuf **, uint16_t);
-uint16_t mlx5_tx_burst_mpw(void *, struct rte_mbuf **, uint16_t);
-uint16_t mlx5_tx_burst_mpw_inline(void *, struct rte_mbuf **, uint16_t);
-uint16_t mlx5_tx_burst_empw(void *, struct rte_mbuf **, uint16_t);
-uint16_t mlx5_rx_burst(void *, struct rte_mbuf **, uint16_t);
+uint16_t mlx5_mdev_tx_burst(void *, struct rte_mbuf **, uint16_t);
+uint16_t mlx5_mdev_tx_burst_mpw(void *, struct rte_mbuf **, uint16_t);
+uint16_t mlx5_mdev_tx_burst_mpw_inline(void *, struct rte_mbuf **, uint16_t);
+uint16_t mlx5_mdev_tx_burst_empw(void *, struct rte_mbuf **, uint16_t);
+uint16_t mlx5_mdev_rx_burst(void *, struct rte_mbuf **, uint16_t);
 uint16_t removed_tx_burst(void *, struct rte_mbuf **, uint16_t);
 uint16_t removed_rx_burst(void *, struct rte_mbuf **, uint16_t);
 int mlx5_rx_descriptor_status(void *, uint16_t);
@@ -335,7 +373,7 @@ struct mlx5_mdev_mr *priv_txq_mp2mr_reg(struct mlx5_mdev_priv *priv, struct mlx5
 struct mlx5_mdev_mr *mlx5_txq_mp2mr_reg(struct mlx5_txq_data *, struct rte_mempool *,
 				   unsigned int);
 
-#ifndef NDEBUG
+//#ifndef NDEBUG
 /**
  * Verify or set magic value in CQE.
  *
@@ -360,7 +398,7 @@ check_cqe_seen(volatile struct mlx5_cqe *cqe)
 		}
 	return ret;
 }
-#endif /* NDEBUG */
+//#endif /* NDEBUG */
 
 /**
  * Check whether CQE is valid.
@@ -383,10 +421,9 @@ check_cqe(volatile struct mlx5_cqe *cqe,
 	uint8_t op_own = cqe->op_own;
 	uint8_t op_owner = MLX5_CQE_OWNER(op_own);
 	uint8_t op_code = MLX5_CQE_OPCODE(op_own);
-
 	if (unlikely((op_owner != (!!(idx))) || (op_code == MLX5_CQE_INVALID)))
 		return 1; /* No CQE. */
-#ifndef NDEBUG
+//#ifndef NDEBUG
 	if ((op_code == MLX5_CQE_RESP_ERR) ||
 	    (op_code == MLX5_CQE_REQ_ERR)) {
 		volatile struct mlx5_err_cqe *err_cqe = (volatile void *)cqe;
@@ -415,7 +452,7 @@ check_cqe(volatile struct mlx5_cqe *cqe,
 		}
 		return 1;
 	}
-#endif /* NDEBUG */
+//#endif /* NDEBUG */
 	return 0;
 }
 
@@ -464,7 +501,7 @@ mlx5_tx_complete(struct mlx5_txq_data *txq)
 	cqe = &(*txq->cqes)[cq_ci & cqe_cnt];
 	if (unlikely(check_cqe(cqe, cqe_n, cq_ci)))
 		return;
-#ifndef NDEBUG
+//#ifndef NDEBUG
 	if ((MLX5_CQE_OPCODE(cqe->op_own) == MLX5_CQE_RESP_ERR) ||
 	    (MLX5_CQE_OPCODE(cqe->op_own) == MLX5_CQE_REQ_ERR)) {
 		if (!check_cqe_seen(cqe)) {
@@ -476,7 +513,7 @@ mlx5_tx_complete(struct mlx5_txq_data *txq)
 		}
 		return;
 	}
-#endif /* NDEBUG */
+//#endif /* NDEBUG */
 	++cq_ci;
 	txq->wqe_pi = rte_be_to_cpu_16(cqe->wqe_counter);
 	ctrl = (volatile struct mlx5_wqe_ctrl *)

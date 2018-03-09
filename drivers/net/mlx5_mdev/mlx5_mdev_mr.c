@@ -247,8 +247,10 @@ priv_mr_new(struct mlx5_mdev_priv *priv, struct rte_mempool *mp)
 	uintptr_t end;
 	unsigned int i;
 	struct mlx5_mdev_mr *mr;
+	struct mlx5_mdev_mkey *mkey = NULL;
+	struct mlx5_mdev_mkey_attr mkey_attr = {0};
 
-	mr = rte_zmalloc_socket(__func__, sizeof(*mr), 0, mp->socket_id);
+	mr = rte_zmalloc_socket(__func__, sizeof(*mr), 64, mp->socket_id);
 	if (!mr) {
 		DEBUG("unable to configure MR, ibv_reg_mr() failed.");
 		return NULL;
@@ -280,10 +282,18 @@ priv_mr_new(struct mlx5_mdev_priv *priv, struct rte_mempool *mp)
 	      (size_t)(end - start));
 	mr->mr = devx_umem_reg(priv->ctx,
 			(void *)start, end - start,
-			DEVX_ACCESS_LOCAL_WRITE,
+			7,
 			      &mr->key);
+	mkey_attr.addr	= (uint64_t)start;
+	mkey_attr.pd = priv->pd.pd;
+	mkey_attr.pas_id = mr->key;
+	mkey_attr.size = end - start;
+
+	mkey = mlx5_mdev_create_mkey(priv,&mkey_attr);
+
+
 	mr->mp = mp;
-	mr->lkey = rte_cpu_to_be_32(mr->lkey);
+	mr->lkey = rte_cpu_to_be_32(mkey->key);
 	rte_atomic32_inc(&mr->refcnt);
 	DEBUG("%p: new Memory Region %p refcnt: %d", (void *)priv,
 	      (void *)mr, rte_atomic32_read(&mr->refcnt));

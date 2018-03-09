@@ -33,9 +33,7 @@ int64_t mlx5_get_dbrec(struct mlx5_mdev_priv *priv)
 	struct mlx5_mdev_db_page *page = (struct mlx5_mdev_db_page *)priv->db_page;
 	int i, j;
 	uint64_t db_rec;
-	printf("oooOri in mlx5_get_dbrec start\n");
 	if (!page) {
-		printf("oooOri in mlx5_get_dbrec alloc new page\n");
 		int ps = 4096; // todo detirmine what size to put here. priv->page_size;
 		int pp = ps / priv->cache_line_size;
 		int nlong = (pp + 8 * sizeof(long) - 1) / (8 * sizeof(long));

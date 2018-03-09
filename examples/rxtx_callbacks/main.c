@@ -120,7 +120,7 @@ port_init(uint16_t port, struct rte_mempool *mbuf_pool)
 		return retval;
 
 	struct ether_addr addr;
-
+	printf("oooOri in port_init ~~~~~!!!!\n");
 	rte_eth_macaddr_get(port, &addr);
 	printf("Port %u MAC: %02"PRIx8" %02"PRIx8" %02"PRIx8
 			" %02"PRIx8" %02"PRIx8" %02"PRIx8"\n",

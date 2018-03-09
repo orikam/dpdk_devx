@@ -50,9 +50,9 @@ struct devx_db_page {
 	void			       *buf;
 	int				num_db;
 	int				use_cnt;
-	unsigned long			free[0];
 	struct devx_obj_handle	       *mem;
 	uint32_t			mem_id;
+	unsigned long			free[0];
 };
 
 static struct devx_db_page *__add_page(void *ctx)

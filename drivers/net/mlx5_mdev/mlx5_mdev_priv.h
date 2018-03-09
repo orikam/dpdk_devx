@@ -19,6 +19,15 @@ enum {
 };
 
 enum {
+	MLX5_RCV_DBR	= 0,
+	MLX5_SND_DBR	= 1,
+};
+
+enum {
+	MLX5_INLINE_SEG	= 0x80000000,
+};
+
+enum {
 	PCI_DEVICE_ID_MELLANOX_CONNECTX4 = 0x1013,
 	PCI_DEVICE_ID_MELLANOX_CONNECTX4VF = 0x1014,
 	PCI_DEVICE_ID_MELLANOX_CONNECTX4LX = 0x1015,
@@ -42,6 +51,26 @@ enum devx_access_flags {
 enum mlx5_cap_mode {
 	HCA_CAP_OPMOD_GET_MAX	= 0,
 	HCA_CAP_OPMOD_GET_CUR	= 1,
+};
+
+enum {
+	MLX5_OPCODE_NOP			= 0x00,
+	MLX5_OPCODE_SEND_INVAL		= 0x01,
+	MLX5_OPCODE_RDMA_WRITE		= 0x08,
+	MLX5_OPCODE_RDMA_WRITE_IMM	= 0x09,
+	MLX5_OPCODE_SEND		= 0x0a,
+	MLX5_OPCODE_SEND_IMM		= 0x0b,
+	MLX5_OPCODE_TSO			= 0x0e,
+	MLX5_OPCODE_RDMA_READ		= 0x10,
+	MLX5_OPCODE_ATOMIC_CS		= 0x11,
+	MLX5_OPCODE_ATOMIC_FA		= 0x12,
+	MLX5_OPCODE_ATOMIC_MASKED_CS	= 0x14,
+	MLX5_OPCODE_ATOMIC_MASKED_FA	= 0x15,
+	MLX5_OPCODE_FMR			= 0x19,
+	MLX5_OPCODE_LOCAL_INVAL		= 0x1b,
+	MLX5_OPCODE_CONFIG_CMD		= 0x1f,
+	MLX5_OPCODE_UMR			= 0x25,
+	MLX5_OPCODE_TAG_MATCHING	= 0x28
 };
 
 /* Default PMD specific parameter value. */
@@ -78,6 +107,8 @@ struct mlx5_mdev_dev_config {
 
 };
 
+
+
 struct mlx5_mdev_db_page {
 	const struct rte_memzone *rte_mz;
 	int num_db;
@@ -87,9 +118,10 @@ struct mlx5_mdev_db_page {
 
 struct mdev_cq_attr {
 	void *ctx;
-	uint32_t cqe; /* Minimum number of entries required for CQ */
+	uint32_t ncqe; /* log2 of minimum number of entries required for CQ */
 	uint32_t create_flags;
 	uint32_t eqn;
+	uint32_t uar;
 };
 
 struct mdev_tis_attr {
@@ -127,6 +159,7 @@ struct mdev_sq_attr {
 	uint32_t cqn;
 	uint32_t tisn;
 	uint32_t uar;
+	uint32_t state;
 	struct mdev_wq_attr wq;
 };
 
@@ -149,9 +182,9 @@ struct mdev_mem_reg {
 };
 
 struct mdev_dbr{
-	size_t addr;
+	size_t offset;
 	uint32_t index;
-	struct devx_obj_handle *object;
+	void * addr;
 };
 
 
@@ -180,6 +213,8 @@ struct mlx5_mdev_priv {
 	LIST_HEAD(txqmdev, mlx5_txq_mdev) txqsmdev; /* mdev Tx queues. */
 	struct mlx5_mdev_cap caps;
 	//struct mlx5_mdev_cap caps_max;  TODO: Do we need caps max ?
+	uint32_t link_speed_capa; /* Link speed capabilities. */
+	struct mlx5_xstats_ctrl xstats_ctrl; /* Extended stats control. */
 };
 
 struct mdev_cq {
@@ -221,7 +256,7 @@ struct mdev_wq {
 	uint8_t wq_type;
 	uint32_t pd;
 	uint32_t uar_page;
-	uint32_t dbr_addr;
+	void * dbr_addr;
 	uint32_t hw_counter;
 	uint32_t sw_counter;
 	uint8_t stride_sz; /* The size of a WQ stride equals 2^log_wq_stride. */
@@ -314,7 +349,12 @@ mlx5_mdev_create_tis(struct mlx5_mdev_priv *priv,
 struct mdev_sq *
 mlx5_mdev_create_sq(struct mlx5_mdev_priv *priv,
 		    struct mdev_sq_attr *sq_attr);
-
+int
+mlx5_mdev_query_sq(struct mdev_sq *sq,
+		    struct mdev_sq_attr *sq_attr);
+int
+mlx5_mdev_modify_sq(struct mdev_sq *sq,
+		    struct mdev_sq_attr *sq_attr);
 int mlx5_mdev_alloc_pd(struct mlx5_mdev_priv *priv);
 int mlx5_mdev_alloc_td(struct mlx5_mdev_priv *priv);
 struct mlx5_mdev_mkey *mlx5_mdev_create_mkey(struct mlx5_mdev_priv *priv,
@@ -341,6 +381,10 @@ priv_select_tx_function(struct mlx5_mdev_priv *priv, struct rte_eth_dev *dev);
 int mlx5_dev_configure(struct rte_eth_dev *dev);
 int mlx5_mdev_device_to_pci_addr(const struct devx_device *device,
 				 struct rte_pci_addr *pci_addr);
+int mlx5_mdev_set_link_down(struct rte_eth_dev *dev);
+int mlx5_mdev_set_link_up(struct rte_eth_dev *dev);
+int mlx5_mdev_link_update(struct rte_eth_dev *dev, int wait_to_complete);
+
 
 /*mlx5_mac.c */
 int mdev_priv_get_mac(struct mlx5_mdev_priv *priv,
@@ -366,6 +410,22 @@ int priv_dev_traffic_enable(struct mlx5_mdev_priv *, struct rte_eth_dev *);
 int priv_dev_traffic_disable(struct mlx5_mdev_priv *, struct rte_eth_dev *);
 int priv_dev_traffic_restart(struct mlx5_mdev_priv *, struct rte_eth_dev *);
 int mlx5_traffic_restart(struct rte_eth_dev *);
+
+/* mlx5_mdev_rxtx.c */
+uint16_t
+mlx5_mdev_tx_burst(void *dpdk_txq, struct rte_mbuf **pkts, uint16_t pkts_n);
+
+
+/* mlx5_stats.c */
+
+void priv_xstats_init(struct mlx5_mdev_priv *);
+int mlx5_mdev_stats_get(struct rte_eth_dev *, struct rte_eth_stats *);
+void mlx5_mdev_stats_reset(struct rte_eth_dev *);
+int mlx5_mdev_xstats_get(struct rte_eth_dev *,
+		    struct rte_eth_xstat *, unsigned int);
+void mlx5_mdev_xstats_reset(struct rte_eth_dev *);
+int mlx5_mdev_xstats_get_names(struct rte_eth_dev *,
+			  struct rte_eth_xstat_name *, unsigned int);
 
 #endif
 

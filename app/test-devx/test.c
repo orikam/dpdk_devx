@@ -43,7 +43,7 @@ void test_mr(void *ctx, int pd) {
 	uint32_t mem_id;
 	void *buff;
 
-	buff = mmap(NULL, 0x1000, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANON, -1, 0);
+	buff = malloc(0x1040); //mmap(NULL, 0x1000, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANON, -1, 0);
 	mem = devx_umem_reg(ctx, buff, 0x1000, 7, &mem_id);
 	printf("%s:%d %p %d %d\n", __func__, __LINE__, mem, errno, mem_id);
 
@@ -55,7 +55,7 @@ void test_mr(void *ctx, int pd) {
 	MLX5_SET(create_mkey_in, in, ctx.lw, 1);
 	MLX5_SET(create_mkey_in, in, ctx.lr, 1);
 	MLX5_SET64(create_mkey_in, in, ctx.start_addr, (intptr_t)buff);
-	MLX5_SET64(create_mkey_in, in, ctx.len, 0x1000);
+	MLX5_SET64(create_mkey_in, in, ctx.len, 0x1040);
 	MLX5_SET(create_mkey_in, in, ctx.pd, pd);
 	MLX5_SET(create_mkey_in, in, ctx.translations_octword_size, 1);
 	MLX5_SET(create_mkey_in, in, ctx.log_page_size, 12);

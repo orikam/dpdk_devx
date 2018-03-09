@@ -6,511 +6,553 @@
 #include <unistd.h>
 #include <netinet/in.h>
 #include <string.h>
-#include <stddef.h>
-#include <unistd.h>
-#include <string.h>
-#include <stdint.h>
-#include <stdlib.h>
-#include <errno.h>
-#include <net/if.h>
-#include <assert.h>
-#include <sys/mman.h>
+	#include <stddef.h>
+	#include <unistd.h>
+	#include <string.h>
+	#include <stdint.h>
+	#include <stdlib.h>
+	#include <errno.h>
+	#include <net/if.h>
+	#include <assert.h>
+	#include <sys/mman.h>
 
-#include <rte_io.h>
-#include <rte_pci.h>
-#include <rte_log.h>
-#include <rte_malloc.h>
-#include <rte_memzone.h>
-#include <rte_eal_memconfig.h>
-#include <rte_kvargs.h>
+	#include <rte_io.h>
+	#include <rte_pci.h>
+	#include <rte_log.h>
+	#include <rte_malloc.h>
+	#include <rte_memzone.h>
+	#include <rte_eal_memconfig.h>
+	#include <rte_kvargs.h>
 
-#include <rte_ether.h>
-#include <rte_ethdev.h>
-#include <rte_ethdev_pci.h>
-#include <rte_eth_ctrl.h>
+	#include <rte_ether.h>
+	#include <rte_ethdev.h>
+	#include <rte_ethdev_pci.h>
+	#include <rte_eth_ctrl.h>
 
-#include "devx.h"
-#include "mlx5_mdev_utils.h"
-//#include "mdev_lib.h"
-#include "mdev_prm.h"
-#include "mlx5_mdev_priv.h"
+	#include "devx.h"
+	#include "mlx5_mdev_utils.h"
+	//#include "mdev_lib.h"
+	#include "mdev_prm.h"
+	#include "mlx5_mdev_priv.h"
 
-/* Device parameter to enable RX completion queue compression. */
-#define MLX5_RXQ_CQE_COMP_EN "rxq_cqe_comp_en"
+	/* Device parameter to enable RX completion queue compression. */
+	#define MLX5_RXQ_CQE_COMP_EN "rxq_cqe_comp_en"
 
-/* Device parameter to configure inline send. */
-#define MLX5_TXQ_INLINE "txq_inline"
+	/* Device parameter to configure inline send. */
+	#define MLX5_TXQ_INLINE "txq_inline"
 
-/*
- * Device parameter to configure the number of TX queues threshold for
- * enabling inline send.
- */
-#define MLX5_TXQS_MIN_INLINE "txqs_min_inline"
+	/*
+	 * Device parameter to configure the number of TX queues threshold for
+	 * enabling inline send.
+	 */
+	#define MLX5_TXQS_MIN_INLINE "txqs_min_inline"
 
-/* Device parameter to enable multi-packet send WQEs. */
-#define MLX5_TXQ_MPW_EN "txq_mpw_en"
+	/* Device parameter to enable multi-packet send WQEs. */
+	#define MLX5_TXQ_MPW_EN "txq_mpw_en"
 
-/* Device parameter to include 2 dsegs in the title WQEBB. */
-#define MLX5_TXQ_MPW_HDR_DSEG_EN "txq_mpw_hdr_dseg_en"
+	/* Device parameter to include 2 dsegs in the title WQEBB. */
+	#define MLX5_TXQ_MPW_HDR_DSEG_EN "txq_mpw_hdr_dseg_en"
 
-/* Device parameter to limit the size of inlining packet. */
-#define MLX5_TXQ_MAX_INLINE_LEN "txq_max_inline_len"
+	/* Device parameter to limit the size of inlining packet. */
+	#define MLX5_TXQ_MAX_INLINE_LEN "txq_max_inline_len"
 
-/* Device parameter to enable hardware Tx vector. */
-#define MLX5_TX_VEC_EN "tx_vec_en"
+	/* Device parameter to enable hardware Tx vector. */
+	#define MLX5_TX_VEC_EN "tx_vec_en"
 
-/* Device parameter to enable hardware Rx vector. */
-#define MLX5_RX_VEC_EN "rx_vec_en"
+	/* Device parameter to enable hardware Rx vector. */
+	#define MLX5_RX_VEC_EN "rx_vec_en"
 
-static inline struct mlx5_mdev_memzone * alloc_pinned(void * edev,
-					const char *name,
-					size_t size,
-					size_t align)
-{
-	const struct rte_memzone *rte_mz = rte_eth_dma_zone_reserve(edev,
-				name, 0, size, align,
-				((struct rte_eth_dev *)edev)->data->numa_node);
-	struct mlx5_mdev_memzone *mz = rte_zmalloc("mdev",
-					sizeof(struct mlx5_mdev_memzone), 64);
+	static inline struct mlx5_mdev_memzone * alloc_pinned(void * edev,
+						const char *name,
+						size_t size,
+						size_t align)
+	{
+		const struct rte_memzone *rte_mz = rte_eth_dma_zone_reserve(edev,
+					name, 0, size, align,
+					((struct rte_eth_dev *)edev)->data->numa_node);
+		struct mlx5_mdev_memzone *mz = rte_zmalloc("mdev",
+						sizeof(struct mlx5_mdev_memzone), 64);
 
-	if(!mz)
+		if(!mz)
+			return mz;
+		mz->addr = rte_mz->addr;
+		mz->phys_addr = rte_mz->iova;
 		return mz;
-	mz->addr = rte_mz->addr;
-	mz->phys_addr = rte_mz->iova;
-	return mz;
-}
-#if 0
-static int get_mac_address(uint8_t *mac_address)
-{
-	struct ifreq ifr;
-    	struct ifconf ifc;
-    	char buf[1024];
-    	int success = 0;
-	struct ifreq* it;
-	const struct ifreq* end;
-	int i;
- 
-    	int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
-	if (sock == -1) { /* handle error*/ };
-
-	ifc.ifc_len = sizeof(buf);
-	ifc.ifc_buf = buf;
-	if (ioctl(sock, SIOCGIFCONF, &ifc) == -1) { /* handle error */ }
-
-    	it = ifc.ifc_req;
-    	end = it + (ifc.ifc_len / sizeof(struct ifreq));
-
-    	for (; it != end; ++it) {
-        	strcpy(ifr.ifr_name, it->ifr_name);
-        	if (ioctl(sock, SIOCGIFFLAGS, &ifr) == 0) {
-            		if (! (ifr.ifr_flags & IFF_LOOPBACK)) { // don't count loopback
-                		if (ioctl(sock, SIOCGIFHWADDR, &ifr) == 0) {
-                    		success = 0;
-                    		break;
-                		}
-           	 	}
-        	}
-        	else
-			success = 1;
-    	}
-    	if (!success) memcpy(mac_address, ifr.ifr_hwaddr.sa_data, 6);
-	printf("mac address: ");
-	for (i=0; i<6; i++) {
-		printf("%x,",mac_address[i]);
 	}
-	printf("\n");
-	return success;
-}
-#endif
+	#if 0
+	static int get_mac_address(uint8_t *mac_address)
+	{
+		struct ifreq ifr;
+		struct ifconf ifc;
+		char buf[1024];
+		int success = 0;
+		struct ifreq* it;
+		const struct ifreq* end;
+		int i;
+	 
+		int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
+		if (sock == -1) { /* handle error*/ };
 
+		ifc.ifc_len = sizeof(buf);
+		ifc.ifc_buf = buf;
+		if (ioctl(sock, SIOCGIFCONF, &ifc) == -1) { /* handle error */ }
 
-static void mlx5_mdev_infos_get(struct rte_eth_dev *edev, // TODO: review field-by-field, considering dev caps
-				struct rte_eth_dev_info *info)
-{
-	info->pci_dev		 = RTE_ETH_DEV_TO_PCI(edev);
-	info->min_rx_bufsize	 = 32;
-	info->max_rx_pktlen	 = 65536;
-	info->max_rx_queues	 = 1;
-	info->max_tx_queues	 = 1;
-	info->max_mac_addrs	 = 1;
-	info->rx_offload_capa	 = DEV_RX_OFFLOAD_IPV4_CKSUM;
-	info->rx_offload_capa	|= DEV_RX_OFFLOAD_UDP_CKSUM;
-	info->rx_offload_capa	|= DEV_RX_OFFLOAD_TCP_CKSUM;
-	info->rx_offload_capa	|= DEV_RX_OFFLOAD_VLAN_STRIP;
-	info->tx_offload_capa	 = DEV_TX_OFFLOAD_IPV4_CKSUM;
-	info->tx_offload_capa	|= DEV_TX_OFFLOAD_UDP_CKSUM;
-	info->tx_offload_capa	|= DEV_TX_OFFLOAD_TCP_CKSUM;
-	info->speed_capa	 = ETH_LINK_SPEED_10G;
-}
+		it = ifc.ifc_req;
+		end = it + (ifc.ifc_len / sizeof(struct ifreq));
 
-static const struct eth_dev_ops mlx5_mdev_dev_ops = { // TODO...
-	.dev_start		= mlx5_mdev_start,
-	.dev_infos_get		= mlx5_mdev_infos_get,
-	.tx_queue_setup = mlx5_tx_queue_setup,
-	.dev_configure = mlx5_dev_configure,
-//	.link_update = mlx5_link_update,
-};
-static struct {
-	struct rte_pci_addr pci_addr; /* associated PCI address */
-	uint32_t ports; /* physical ports bitfield. */
-} mlx5_dev[32];
-
-/**
- * Get device index in mlx5_dev[] from PCI bus address.
- *
- * @param[in] pci_addr
- *   PCI bus address to look for.
- *
- * @return
- *   mlx5_dev[] index on success, -1 on failure.
- */
-static int
-mlx5_dev_idx(struct rte_pci_addr *pci_addr)
-{
-        unsigned int i;
-        int ret = -1;
-
-       assert(pci_addr != NULL);
-        for (i = 0; (i != RTE_DIM(mlx5_dev)); ++i) {
-               if ((mlx5_dev[i].pci_addr.domain == pci_addr->domain) &&
-                   (mlx5_dev[i].pci_addr.bus == pci_addr->bus) &&
-                   (mlx5_dev[i].pci_addr.devid == pci_addr->devid) &&
-                   (mlx5_dev[i].pci_addr.function == pci_addr->function))
-			return i;
-		if ((mlx5_dev[i].ports == 0) && (ret == -1))
-			ret = i;
-	}
-	return ret;
-}
-
-/**
- * Verify and store value for device argument.
- *
- * @param[in] key
- *   Key argument to verify.
- * @param[in] val
- *   Value associated with key.
- * @param opaque
- *   User data.
- *
- * @return
- *   0 on success, negative errno value on failure.
- */
-static int
-mlx5_args_check(const char *key, const char *val, void *opaque)
-{
-	struct mlx5_mdev_dev_config *config = opaque;
-	unsigned long tmp;
-
-	errno = 0;
-	tmp = strtoul(val, NULL, 0);
-	if (errno) {
-		WARN("%s: \"%s\" is not a valid integer", key, val);
-		return errno;
-	}
-	if (strcmp(MLX5_RXQ_CQE_COMP_EN, key) == 0) {
-		config->cqe_comp = !!tmp;
-	} else if (strcmp(MLX5_TXQ_INLINE, key) == 0) {
-		config->txq_inline = tmp;
-	} else if (strcmp(MLX5_TXQS_MIN_INLINE, key) == 0) {
-		config->txqs_inline = tmp;
-	} else if (strcmp(MLX5_TXQ_MPW_EN, key) == 0) {
-		config->mps = !!tmp ? config->mps : 0;
-	} else if (strcmp(MLX5_TXQ_MPW_HDR_DSEG_EN, key) == 0) {
-		config->mpw_hdr_dseg = !!tmp;
-	} else if (strcmp(MLX5_TXQ_MAX_INLINE_LEN, key) == 0) {
-		config->inline_max_packet_sz = tmp;
-	} else if (strcmp(MLX5_TX_VEC_EN, key) == 0) {
-		config->tx_vec_en = !!tmp;
-	} else if (strcmp(MLX5_RX_VEC_EN, key) == 0) {
-		config->rx_vec_en = !!tmp;
-	} else {
-		WARN("%s: unknown parameter", key);
-		return -EINVAL;
-	}
-	return 0;
-}
-
-/**
- * Parse device parameters.
- *
- * @param config
- *   Pointer to device configuration structure.
- * @param devargs
- *   Device arguments structure.
- *
- * @return
- *   0 on success, errno value on failure.
- */
-static int __rte_unused
-mlx5_mdev_args(struct mlx5_mdev_dev_config *config, struct rte_devargs *devargs)
-{
-	const char **params = (const char *[]){
-		MLX5_RXQ_CQE_COMP_EN,
-		MLX5_TXQ_INLINE,
-		MLX5_TXQS_MIN_INLINE,
-		MLX5_TXQ_MPW_EN,
-		MLX5_TXQ_MPW_HDR_DSEG_EN,
-		MLX5_TXQ_MAX_INLINE_LEN,
-		MLX5_TX_VEC_EN,
-		MLX5_RX_VEC_EN,
-		NULL,
-	};
-	struct rte_kvargs *kvlist;
-	int ret = 0;
-	int i;
-
-	if (devargs == NULL)
-		return 0;
-	/* Following UGLY cast is done to pass checkpatch. */
-	kvlist = rte_kvargs_parse(devargs->args, params);
-	if (kvlist == NULL)
-		return 0;
-	/* Process parameters. */
-	for (i = 0; (params[i] != NULL); ++i) {
-		if (rte_kvargs_count(kvlist, params[i])) {
-			ret = rte_kvargs_process(kvlist, params[i],
-						 mlx5_args_check, config);
-			if (ret != 0) {
-				rte_kvargs_free(kvlist);
-				return ret;
+		for (; it != end; ++it) {
+			strcpy(ifr.ifr_name, it->ifr_name);
+			if (ioctl(sock, SIOCGIFFLAGS, &ifr) == 0) {
+				if (! (ifr.ifr_flags & IFF_LOOPBACK)) { // don't count loopback
+					if (ioctl(sock, SIOCGIFHWADDR, &ifr) == 0) {
+					success = 0;
+					break;
+					}
+				}
 			}
+			else
+				success = 1;
 		}
+		if (!success) memcpy(mac_address, ifr.ifr_hwaddr.sa_data, 6);
+		printf("mac address: ");
+		for (i=0; i<6; i++) {
+			printf("%x,",mac_address[i]);
+		}
+		printf("\n");
+		return success;
 	}
-	rte_kvargs_free(kvlist);
-	return 0;
-}
+	#endif
 
-static struct rte_pci_driver mlx5_mdev_pci_driver;
 
-/*
- * Reserved UAR address space for TXQ UAR(hw doorbell) mapping, process
- * local resource used by both primary and secondary to avoid duplicate
- * reservation.
- * The space has to be available on both primary and secondary process,
- * TXQ UAR maps to this area using fixed mmap w/o double check.
- */
-static void *uar_base;
-
-/**
- * Reserve UAR address space for primary process.
- *
- * @param[in] priv
- *   Pointer to private structure.
- *
- * @return
- *   0 on success, errno value on failure.
- */
-static int __rte_unused
-priv_uar_init_primary(struct mlx5_mdev_priv *priv)
-{
-	void *addr = (void *)0;
-	int i;
-	const struct rte_mem_config *mcfg;
-	int ret;
-
-	if (uar_base) { /* UAR address space mapped. */
-		priv->uar_base = uar_base;
-		return 0;
+	static void mlx5_mdev_infos_get(struct rte_eth_dev *edev, // TODO: review field-by-field, considering dev caps
+					struct rte_eth_dev_info *info)
+	{
+		info->pci_dev		 = RTE_ETH_DEV_TO_PCI(edev);
+		info->min_rx_bufsize	 = 32;
+		info->max_rx_pktlen	 = 65536;
+		info->max_rx_queues	 = 1;
+		info->max_tx_queues	 = 1;
+		info->max_mac_addrs	 = 1;
+		info->rx_offload_capa	 = DEV_RX_OFFLOAD_IPV4_CKSUM;
+		info->rx_offload_capa	|= DEV_RX_OFFLOAD_UDP_CKSUM;
+		info->rx_offload_capa	|= DEV_RX_OFFLOAD_TCP_CKSUM;
+		info->rx_offload_capa	|= DEV_RX_OFFLOAD_VLAN_STRIP;
+		info->tx_offload_capa	 = DEV_TX_OFFLOAD_IPV4_CKSUM;
+		info->tx_offload_capa	|= DEV_TX_OFFLOAD_UDP_CKSUM;
+		info->tx_offload_capa	|= DEV_TX_OFFLOAD_TCP_CKSUM;
+		info->speed_capa	 = ETH_LINK_SPEED_10G;
 	}
-	/* find out lower bound of hugepage segments */
-	mcfg = rte_eal_get_configuration()->mem_config;
-	for (i = 0; i < RTE_MAX_MEMSEG && mcfg->memseg[i].addr; i++) {
-		if (addr)
-			addr = RTE_MIN(addr, mcfg->memseg[i].addr);
-		else
-			addr = mcfg->memseg[i].addr;
-	}
-	/* keep distance to hugepages to minimize potential conflicts. */
-	addr = RTE_PTR_SUB(addr, MLX5_UAR_OFFSET + MLX5_UAR_SIZE);
-	/* anonymous mmap, no real memory consumption. */
-	addr = mmap(addr, MLX5_UAR_SIZE,
-		    PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-	if (addr == MAP_FAILED) {
-		ERROR("Failed to reserve UAR address space, please adjust "
-		      "MLX5_UAR_SIZE or try --base-virtaddr");
-		ret = ENOMEM;
+
+	static const struct eth_dev_ops mlx5_mdev_dev_ops = { // TODO...
+		.dev_start		= mlx5_mdev_start,
+		.dev_infos_get		= mlx5_mdev_infos_get,
+		.tx_queue_setup = mlx5_tx_queue_setup,
+		.dev_configure = mlx5_dev_configure,
+	//	.dev_stop = mlx5_dev_stop,
+		.dev_set_link_down = mlx5_mdev_set_link_down,
+		.dev_set_link_up = mlx5_mdev_set_link_up,
+		.link_update = mlx5_mdev_link_update,
+		.stats_get = mlx5_mdev_stats_get,
+		.stats_reset = mlx5_mdev_stats_reset,
+
+
+	//	.dev_close = mlx5_dev_close,
+	//	.promiscuous_enable = mlx5_promiscuous_enable,
+	//	.promiscuous_disable = mlx5_promiscuous_disable,
+	//	.allmulticast_enable = mlx5_allmulticast_enable,
+	//	.allmulticast_disable = mlx5_allmulticast_disable,
+	//	.stats_get = mlx5_stats_get,
+	//	.stats_get = mlx5_stats_get,
+	//	.stats_reset = mlx5_stats_reset,
+	//	.xstats_get = mlx5_xstats_get,
+	//	.xstats_reset = mlx5_xstats_reset,
+	//	.xstats_get_names = mlx5_xstats_get_names,
+	//	.dev_infos_get = mlx5_dev_infos_get,
+	//	.dev_supported_ptypes_get = mlx5_dev_supported_ptypes_get,
+	//	.vlan_filter_set = mlx5_vlan_filter_set,
+	//	.rx_queue_setup = mlx5_rx_queue_setup,
+	//	.rx_queue_release = mlx5_rx_queue_release,
+	//	.tx_queue_release = mlx5_tx_queue_release,
+	//	.flow_ctrl_get = mlx5_dev_get_flow_ctrl,
+	//	.flow_ctrl_set = mlx5_dev_set_flow_ctrl,
+	//	.mac_addr_remove = mlx5_mac_addr_remove,
+	//	.mac_addr_add = mlx5_mac_addr_add,
+	//	.mac_addr_set = mlx5_mac_addr_set,
+	//	.mtu_set = mlx5_dev_set_mtu,
+	//	.vlan_strip_queue_set = mlx5_vlan_strip_queue_set,
+	//	.vlan_offload_set = mlx5_vlan_offload_set,
+	//	.reta_update = mlx5_dev_rss_reta_update,
+	//	.reta_query = mlx5_dev_rss_reta_query,
+	//	.rss_hash_update = mlx5_rss_hash_update,
+	//	.rss_hash_conf_get = mlx5_rss_hash_conf_get,
+	//	.filter_ctrl = mlx5_dev_filter_ctrl,
+	//	.rx_descriptor_status = mlx5_rx_descriptor_status,
+	//	.tx_descriptor_status = mlx5_tx_descriptor_status,
+	//	.rx_queue_intr_enable = mlx5_rx_intr_enable,
+	//	.rx_queue_intr_disable = mlx5_rx_intr_disable,
+	//	.is_removed = mlx5_is_removed,
+	//	.link_update = mlx5_link_update,
+	};
+	static struct {
+		struct rte_pci_addr pci_addr; /* associated PCI address */
+		uint32_t ports; /* physical ports bitfield. */
+	} mlx5_dev[32];
+
+	/**
+	 * Get device index in mlx5_dev[] from PCI bus address.
+	 *
+	 * @param[in] pci_addr
+	 *   PCI bus address to look for.
+	 *
+	 * @return
+	 *   mlx5_dev[] index on success, -1 on failure.
+	 */
+	static int
+	mlx5_dev_idx(struct rte_pci_addr *pci_addr)
+	{
+		unsigned int i;
+		int ret = -1;
+
+	       assert(pci_addr != NULL);
+		for (i = 0; (i != RTE_DIM(mlx5_dev)); ++i) {
+		       if ((mlx5_dev[i].pci_addr.domain == pci_addr->domain) &&
+			   (mlx5_dev[i].pci_addr.bus == pci_addr->bus) &&
+			   (mlx5_dev[i].pci_addr.devid == pci_addr->devid) &&
+			   (mlx5_dev[i].pci_addr.function == pci_addr->function))
+				return i;
+			if ((mlx5_dev[i].ports == 0) && (ret == -1))
+				ret = i;
+		}
 		return ret;
 	}
-	/* Accept either same addr or a new addr returned from mmap if target
-	 * range occupied.
+
+	/**
+	 * Verify and store value for device argument.
+	 *
+	 * @param[in] key
+	 *   Key argument to verify.
+	 * @param[in] val
+	 *   Value associated with key.
+	 * @param opaque
+	 *   User data.
+	 *
+	 * @return
+	 *   0 on success, negative errno value on failure.
 	 */
-	INFO("Reserved UAR address space: %p", addr);
-	priv->uar_base = addr; /* for primary and secondary UAR re-mmap. */
-	uar_base = addr; /* process local, don't reserve again. */
-	return 0;
-}
+	static int
+	mlx5_args_check(const char *key, const char *val, void *opaque)
+	{
+		struct mlx5_mdev_dev_config *config = opaque;
+		unsigned long tmp;
 
-static int
-mlx5_mdev_pci_probe(struct rte_pci_driver *pci_drv,
-		    struct rte_pci_device *pci_dev)
-{
-	struct devx_device **list;
-	struct devx_device *devx_dev;
-	struct mlx5_mdev_cap *caps = NULL;
-	void *attr_ctx = NULL;
-	int err = 0;
-	unsigned int sriov;
-	unsigned int mps __rte_unused;
-	unsigned int cqe_comp __rte_unused;
-	unsigned int __rte_unused tunnel_en = 0;
-	int idx;
-	int i;
-	int num_ports = 0;
-
-	printf("oooOri device name %s\n",pci_dev->device.name);
-	(void)pci_drv;
-	assert(pci_drv == &mlx5_mdev_pci_driver);
-
-	/* Get mlx5_dev[] index. */
-	idx = mlx5_dev_idx(&pci_dev->addr);
-	if (idx == -1) {
-		ERROR("this driver cannot support any more adapters");
-		return -ENOMEM;
-	}
-	DEBUG("using driver device index %d", idx);
-	ERROR("==== using driver device index %d", idx);
-
-	/* Save PCI address. */
-	mlx5_dev[idx].pci_addr = pci_dev->addr;
-	list = devx_get_device_list(&i);
-	if (list == NULL) {
-		assert(errno);
-		if (errno == ENOSYS)
-			ERROR("cannot list devices, is devx loaded ?");
-		return -errno;
-	}
-	assert(i >= 0);
-	/*
-	 * For each listed device, check related sysfs entry against
-	 * the provided PCI ID.
-	 */
-	while (i != 0) {
-		struct rte_pci_addr pci_addr;
-
-		--i;
-		DEBUG("checking device \"%s\"", list[i]->name);
-		ERROR("====checking device \"%s\"", list[i]->name);
-		if (mlx5_mdev_device_to_pci_addr(list[i], &pci_addr))
-			continue;
-		if ((pci_dev->addr.domain != pci_addr.domain) ||
-		    (pci_dev->addr.bus != pci_addr.bus) ||
-		    (pci_dev->addr.devid != pci_addr.devid) ||
-		    (pci_dev->addr.function != pci_addr.function))
-			continue;
-		sriov = ((pci_dev->id.device_id ==
-		       PCI_DEVICE_ID_MELLANOX_CONNECTX4VF) ||
-		      (pci_dev->id.device_id ==
-		       PCI_DEVICE_ID_MELLANOX_CONNECTX4LXVF) ||
-		      (pci_dev->id.device_id ==
-		       PCI_DEVICE_ID_MELLANOX_CONNECTX5VF) ||
-		      (pci_dev->id.device_id ==
-		       PCI_DEVICE_ID_MELLANOX_CONNECTX5EXVF));
-		switch (pci_dev->id.device_id) {
-		case PCI_DEVICE_ID_MELLANOX_CONNECTX4:
-			tunnel_en = 1;
-			break;
-		case PCI_DEVICE_ID_MELLANOX_CONNECTX4LX:
-		case PCI_DEVICE_ID_MELLANOX_CONNECTX5:
-		case PCI_DEVICE_ID_MELLANOX_CONNECTX5VF:
-		case PCI_DEVICE_ID_MELLANOX_CONNECTX5EX:
-		case PCI_DEVICE_ID_MELLANOX_CONNECTX5EXVF:
-			tunnel_en = 1;
-			break;
-		default:
-			break;
+		errno = 0;
+		tmp = strtoul(val, NULL, 0);
+		if (errno) {
+			WARN("%s: \"%s\" is not a valid integer", key, val);
+			return errno;
 		}
-		//INFO("PCI information matches, using device \"%s\""
-		ERROR("===== PCI information matches, using device \"%s\""
-		     " (SR-IOV: %s)",
-		     list[i]->name,
-		     sriov ? "true" : "false");
-		attr_ctx = devx_open_device(list[i]);
-		err = errno;
-		break;
-	}
-	if (attr_ctx == NULL) {
-		devx_free_device_list(list);
-		switch (err) {
-		case 0:
-			ERROR("cannot access device, is devx loaded?");
-			return -ENODEV;
-		case EINVAL:
-			ERROR("cannot use device, are drivers up to date?");
+		if (strcmp(MLX5_RXQ_CQE_COMP_EN, key) == 0) {
+			config->cqe_comp = !!tmp;
+		} else if (strcmp(MLX5_TXQ_INLINE, key) == 0) {
+			config->txq_inline = tmp;
+		} else if (strcmp(MLX5_TXQS_MIN_INLINE, key) == 0) {
+			config->txqs_inline = tmp;
+		} else if (strcmp(MLX5_TXQ_MPW_EN, key) == 0) {
+			config->mps = !!tmp ? config->mps : 0;
+		} else if (strcmp(MLX5_TXQ_MPW_HDR_DSEG_EN, key) == 0) {
+			config->mpw_hdr_dseg = !!tmp;
+		} else if (strcmp(MLX5_TXQ_MAX_INLINE_LEN, key) == 0) {
+			config->inline_max_packet_sz = tmp;
+		} else if (strcmp(MLX5_TX_VEC_EN, key) == 0) {
+			config->tx_vec_en = !!tmp;
+		} else if (strcmp(MLX5_RX_VEC_EN, key) == 0) {
+			config->rx_vec_en = !!tmp;
+		} else {
+			WARN("%s: unknown parameter", key);
 			return -EINVAL;
 		}
-		assert(err >0);
-		return -err;
+		return 0;
 	}
-	devx_dev = list[i];
 
-	DEBUG("device opened");
-	ERROR("==== device opened");
-
-	/* Query and verify device capabilities */
-	caps = rte_zmalloc("HCA caps", sizeof(*caps), RTE_CACHE_LINE_SIZE);
-	if (caps == NULL) {
-		ERROR("failed to allocate memory for HCA capabilities");
-		err = ENOMEM;
-		goto error;
-	}
-	if (mlx5_mdev_query_hca_cap(attr_ctx, caps) ||
-	    mlx5_mdev_check_hca_cap(caps)) {
-		err = EFAULT;
-		goto error;
-	}
-	/*
-	 * Multi-packet send is supported by ConnectX-4 Lx PF as well
-	 * as all ConnectX-5 devices.
+	/**
+	 * Parse device parameters.
+	 *
+	 * @param config
+	 *   Pointer to device configuration structure.
+	 * @param devargs
+	 *   Device arguments structure.
+	 *
+	 * @return
+	 *   0 on success, errno value on failure.
 	 */
-	if (MLX5_CAP_ETH(caps, multi_pkt_send_wqe)) {
-		if (MLX5_CAP_ETH(caps, enhanced_multi_pkt_send_wqe)) {
-			DEBUG("Enhanced MPW is supported");
-			ERROR("======== Enhanced MPW is supported");
-			mps = MLX5_MPW_ENHANCED;
-		} else {
-			DEBUG("MPW is supported");
-			ERROR("======= MPW is supported");
-			mps = MLX5_MPW;
-		}
-	} else {
-		DEBUG("MPW isn't supported");
-		ERROR("======= MPW isn't supported");
-		mps = MLX5_MPW_DISABLED;
-	}
-	if (RTE_CACHE_LINE_SIZE == 128 &&
-	    !(MLX5_CAP_GEN(caps, cqe_compression) &&
-	      MLX5_CAP_GEN(caps, cqe_compression_128b))) // FIXME ? is this the correct check ?
-		cqe_comp = 0;
-	else
-		cqe_comp = 1;
-	num_ports = MLX5_CAP_GEN(caps, num_ports);
-	INFO("%u port(s) detected", num_ports);
-	ERROR("======= %u port(s) detected", num_ports);
-
-	for (i = 0; i < num_ports; i++) {
-		char name[RTE_ETH_NAME_MAX_LEN];
-		int len;
-		uint32_t port = i + 1; /* ports are indexed from one */
-		uint32_t test = (1 << i);
-		struct mlx5_mdev_priv *priv = NULL;
-		void *dev_ctx = NULL;
-		struct rte_eth_dev *eth_dev;
-		struct ether_addr mac;
-		//uint16_t num_vfs = 0; TODO: handle me
-		uint8_t port_admin_state;
-		uint8_t port_state;
-		struct mlx5_mdev_dev_config config = {
-			.cqe_comp = cqe_comp,
-			.mps = mps,
-			.tunnel_en = tunnel_en,
-			.tx_vec_en = 1,
-			.rx_vec_en = 1,
-			.mpw_hdr_dseg = 0,
-			.txq_inline = MLX5_ARG_UNSET,
-			.txqs_inline = MLX5_ARG_UNSET,
-			.inline_max_packet_sz = MLX5_ARG_UNSET,
+	static int __rte_unused
+	mlx5_mdev_args(struct mlx5_mdev_dev_config *config, struct rte_devargs *devargs)
+	{
+		const char **params = (const char *[]){
+			MLX5_RXQ_CQE_COMP_EN,
+			MLX5_TXQ_INLINE,
+			MLX5_TXQS_MIN_INLINE,
+			MLX5_TXQ_MPW_EN,
+			MLX5_TXQ_MPW_HDR_DSEG_EN,
+			MLX5_TXQ_MAX_INLINE_LEN,
+			MLX5_TX_VEC_EN,
+			MLX5_RX_VEC_EN,
+			NULL,
 		};
+		struct rte_kvargs *kvlist;
+		int ret = 0;
+		int i;
+
+		if (devargs == NULL)
+			return 0;
+		/* Following UGLY cast is done to pass checkpatch. */
+		kvlist = rte_kvargs_parse(devargs->args, params);
+		if (kvlist == NULL)
+			return 0;
+		/* Process parameters. */
+		for (i = 0; (params[i] != NULL); ++i) {
+			if (rte_kvargs_count(kvlist, params[i])) {
+				ret = rte_kvargs_process(kvlist, params[i],
+							 mlx5_args_check, config);
+				if (ret != 0) {
+					rte_kvargs_free(kvlist);
+					return ret;
+				}
+			}
+		}
+		rte_kvargs_free(kvlist);
+		return 0;
+	}
+
+	static struct rte_pci_driver mlx5_mdev_pci_driver;
+
+	/*
+	 * Reserved UAR address space for TXQ UAR(hw doorbell) mapping, process
+	 * local resource used by both primary and secondary to avoid duplicate
+	 * reservation.
+	 * The space has to be available on both primary and secondary process,
+	 * TXQ UAR maps to this area using fixed mmap w/o double check.
+	 */
+	static void *uar_base;
+
+	/**
+	 * Reserve UAR address space for primary process.
+	 *
+	 * @param[in] priv
+	 *   Pointer to private structure.
+	 *
+	 * @return
+	 *   0 on success, errno value on failure.
+	 */
+	static int __rte_unused
+	priv_uar_init_primary(struct mlx5_mdev_priv *priv)
+	{
+		void *addr = (void *)0;
+		int i;
+		const struct rte_mem_config *mcfg;
+		int ret;
+
+		if (uar_base) { /* UAR address space mapped. */
+			priv->uar_base = uar_base;
+			return 0;
+		}
+		/* find out lower bound of hugepage segments */
+		mcfg = rte_eal_get_configuration()->mem_config;
+		for (i = 0; i < RTE_MAX_MEMSEG && mcfg->memseg[i].addr; i++) {
+			if (addr)
+				addr = RTE_MIN(addr, mcfg->memseg[i].addr);
+			else
+				addr = mcfg->memseg[i].addr;
+		}
+		/* keep distance to hugepages to minimize potential conflicts. */
+		addr = RTE_PTR_SUB(addr, MLX5_UAR_OFFSET + MLX5_UAR_SIZE);
+		/* anonymous mmap, no real memory consumption. */
+		addr = mmap(addr, MLX5_UAR_SIZE,
+			    PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		if (addr == MAP_FAILED) {
+			ERROR("Failed to reserve UAR address space, please adjust "
+			      "MLX5_UAR_SIZE or try --base-virtaddr");
+			ret = ENOMEM;
+			return ret;
+		}
+		/* Accept either same addr or a new addr returned from mmap if target
+		 * range occupied.
+		 */
+		INFO("Reserved UAR address space: %p", addr);
+		priv->uar_base = addr; /* for primary and secondary UAR re-mmap. */
+		uar_base = addr; /* process local, don't reserve again. */
+		return 0;
+	}
+	static int
+	mlx5_mdev_pci_probe(struct rte_pci_driver *pci_drv,
+			    struct rte_pci_device *pci_dev)
+	{
+		struct devx_device **list;
+		struct devx_device *devx_dev;
+		struct mlx5_mdev_cap *caps = NULL;
+		void *attr_ctx = NULL;
+		int err = 0;
+		unsigned int sriov;
+		unsigned int mps __rte_unused;
+		unsigned int cqe_comp __rte_unused;
+		unsigned int __rte_unused tunnel_en = 0;
+		int idx;
+		int i;
+		int num_ports = 0;
+
+		printf("oooOri device name %s\n",pci_dev->device.name);
+		(void)pci_drv;
+		assert(pci_drv == &mlx5_mdev_pci_driver);
+
+		/* Get mlx5_dev[] index. */
+		idx = mlx5_dev_idx(&pci_dev->addr);
+		if (idx == -1) {
+			ERROR("this driver cannot support any more adapters");
+			return -ENOMEM;
+		}
+		DEBUG("using driver device index %d", idx);
+		ERROR("==== using driver device index %d", idx);
+
+		/* Save PCI address. */
+		mlx5_dev[idx].pci_addr = pci_dev->addr;
+		list = devx_get_device_list(&i);
+		if (list == NULL) {
+			assert(errno);
+			if (errno == ENOSYS)
+				ERROR("cannot list devices, is devx loaded ?");
+			return -errno;
+		}
+		assert(i >= 0);
+		/*
+		 * For each listed device, check related sysfs entry against
+		 * the provided PCI ID.
+		 */
+		while (i != 0) {
+			struct rte_pci_addr pci_addr;
+
+			--i;
+			DEBUG("checking device \"%s\"", list[i]->name);
+			ERROR("====checking device \"%s\"", list[i]->name);
+			if (mlx5_mdev_device_to_pci_addr(list[i], &pci_addr))
+				continue;
+			if ((pci_dev->addr.domain != pci_addr.domain) ||
+			    (pci_dev->addr.bus != pci_addr.bus) ||
+			    (pci_dev->addr.devid != pci_addr.devid) ||
+			    (pci_dev->addr.function != pci_addr.function))
+				continue;
+			sriov = ((pci_dev->id.device_id ==
+			       PCI_DEVICE_ID_MELLANOX_CONNECTX4VF) ||
+			      (pci_dev->id.device_id ==
+			       PCI_DEVICE_ID_MELLANOX_CONNECTX4LXVF) ||
+			      (pci_dev->id.device_id ==
+			       PCI_DEVICE_ID_MELLANOX_CONNECTX5VF) ||
+			      (pci_dev->id.device_id ==
+			       PCI_DEVICE_ID_MELLANOX_CONNECTX5EXVF));
+			switch (pci_dev->id.device_id) {
+			case PCI_DEVICE_ID_MELLANOX_CONNECTX4:
+				tunnel_en = 1;
+				break;
+			case PCI_DEVICE_ID_MELLANOX_CONNECTX4LX:
+			case PCI_DEVICE_ID_MELLANOX_CONNECTX5:
+			case PCI_DEVICE_ID_MELLANOX_CONNECTX5VF:
+			case PCI_DEVICE_ID_MELLANOX_CONNECTX5EX:
+			case PCI_DEVICE_ID_MELLANOX_CONNECTX5EXVF:
+				tunnel_en = 1;
+				break;
+			default:
+				break;
+			}
+			//INFO("PCI information matches, using device \"%s\""
+			ERROR("===== PCI information matches, using device \"%s\""
+			     " (SR-IOV: %s)",
+			     list[i]->name,
+			     sriov ? "true" : "false");
+			attr_ctx = devx_open_device(list[i]);
+			err = errno;
+			break;
+		}
+		if (attr_ctx == NULL) {
+			devx_free_device_list(list);
+			switch (err) {
+			case 0:
+				ERROR("cannot access device, is devx loaded?");
+				return -ENODEV;
+			case EINVAL:
+				ERROR("cannot use device, are drivers up to date?");
+				return -EINVAL;
+			}
+			assert(err >0);
+			return -err;
+		}
+		devx_dev = list[i];
+
+		DEBUG("device opened");
+		ERROR("==== device opened");
+
+		/* Query and verify device capabilities */
+		caps = rte_zmalloc("HCA caps", sizeof(*caps), RTE_CACHE_LINE_SIZE);
+		if (caps == NULL) {
+			ERROR("failed to allocate memory for HCA capabilities");
+			err = ENOMEM;
+			goto error;
+		}
+		if (mlx5_mdev_query_hca_cap(attr_ctx, caps) ||
+		    mlx5_mdev_check_hca_cap(caps)) {
+			err = EFAULT;
+			goto error;
+		}
+		/*
+		 * Multi-packet send is supported by ConnectX-4 Lx PF as well
+		 * as all ConnectX-5 devices.
+		 */
+		if (MLX5_CAP_ETH(caps, multi_pkt_send_wqe)) {
+			if (MLX5_CAP_ETH(caps, enhanced_multi_pkt_send_wqe)) {
+				DEBUG("Enhanced MPW is supported");
+				ERROR("======== Enhanced MPW is supported");
+				mps = MLX5_MPW_ENHANCED;
+			} else {
+				DEBUG("MPW is supported");
+				ERROR("======= MPW is supported");
+				mps = MLX5_MPW;
+			}
+		} else {
+			DEBUG("MPW isn't supported");
+			ERROR("======= MPW isn't supported");
+			mps = MLX5_MPW_DISABLED;
+		}
+		if (RTE_CACHE_LINE_SIZE == 128 &&
+		    !(MLX5_CAP_GEN(caps, cqe_compression) &&
+		      MLX5_CAP_GEN(caps, cqe_compression_128b))) // FIXME ? is this the correct check ?
+			cqe_comp = 0;
+		else
+			cqe_comp = 1;
+		num_ports = MLX5_CAP_GEN(caps, num_ports);
+		INFO("%u port(s) detected", num_ports);
+		ERROR("======= %u port(s) detected", num_ports);
+
+		for (i = 0; i < num_ports; i++) {
+			char name[RTE_ETH_NAME_MAX_LEN];
+			int len;
+			uint32_t port = i + 1; /* ports are indexed from one */
+			uint32_t test = (1 << i);
+			struct mlx5_mdev_priv *priv = NULL;
+			void *dev_ctx = NULL;
+			struct rte_eth_dev *eth_dev;
+			struct ether_addr mac;
+			//uint16_t num_vfs = 0; TODO: handle me
+			uint8_t port_admin_state;
+			uint8_t port_state;
+			struct mlx5_mdev_dev_config config = {
+				.cqe_comp = cqe_comp,
+				.mps = mps,
+				.tunnel_en = tunnel_en,
+				.tx_vec_en = 1,
+				.rx_vec_en = 1,
+				.mpw_hdr_dseg = 0,
+				.txq_inline = MLX5_ARG_UNSET,
+				.txqs_inline = MLX5_ARG_UNSET,
+				.inline_max_packet_sz = MLX5_ARG_UNSET,
+			};
 
 		len = snprintf(name, sizeof(name), PCI_PRI_FMT,
 			 pci_dev->addr.domain, pci_dev->addr.bus,
@@ -518,6 +560,7 @@ mlx5_mdev_pci_probe(struct rte_pci_driver *pci_drv,
 		if (num_ports > 1)
 			snprintf(name + len, sizeof(name), " port %u", i);
 
+		mlx5_dev[idx].ports |= test;
 		mlx5_dev[idx].ports |= test;
 #if 0
 		if (rte_eal_process_type() == RTE_PROC_SECONDARY) {
@@ -750,6 +793,8 @@ mlx5_mdev_pci_probe(struct rte_pci_driver *pci_drv,
 		/*
 		 * Initialize burst functions to prevent crashes before link-up.
 		 */
+		eth_dev->tx_pkt_burst =
+				priv_select_tx_function(priv, eth_dev);
 //		eth_dev->rx_pkt_burst = removed_rx_burst;
 //		eth_dev->tx_pkt_burst = removed_tx_burst;
 		priv->dev = eth_dev;
@@ -812,7 +857,6 @@ static int mlx5_mdev_init(struct rte_eth_dev *edev)
 
 	struct mlx5_mdev_priv *priv = edev->data->dev_private;
 	struct rte_pci_device *pdev = RTE_ETH_DEV_TO_PCI(edev);
-	printf("oooOri in mlx5_mdev_init start\n");
 
 	priv->edev = edev;
 
@@ -851,9 +895,7 @@ static int mlx5_mdev_init(struct rte_eth_dev *edev)
 	sq_attr.tisn = tis->tisn;
 	sq_attr.wq.pd = priv->dev_context->pd;
 	struct mdev_sq *sq = mlx5_mdev_create_sq(priv,&sq_attr);
-	printf("ooooOri in mlx5_mdev_init after cq = %x, %x, %x, %x\n", eq->eqn, cq->cqn, tis->tisn, sq->wq.dbr_addr);
 
-	printf("ooooOri in mlx5_mdev_init end\n");
 	return 0;
 }
 #endif
@@ -867,7 +909,159 @@ static int mlx5_mdev_uninit(struct rte_eth_dev *edev)
 	return 0;
 }
 #endif
+#if 0
+static int mlx5_mdev_pci_probe(__rte_unused struct rte_pci_driver *pci_drv,
+			   struct rte_pci_device *pci_dev)
+{
 
+	struct rte_eth_dev *eth_dev;
+	int ret=0;
+	
+	assert(pci_drv == &mlx5_mdev_driver);
+
+	eth_dev = rte_eth_dev_pci_allocate(pci_dev,
+		sizeof(struct mlx5_mdev_priv));
+
+	if (!eth_dev) {
+		ERROR("rte_eth_dev_pci_allocate Failed");
+		return -ENOMEM;
+	}
+	ret = mlx5_mdev_init(eth_dev);
+	if (ret) {
+		ERROR("mlx5_mdev_init Failed (%d)", ret);
+		rte_eth_dev_pci_release(eth_dev);
+	}
+	return ret;
+}
+#endif
+#if 0
+	struct devx_device **device_list;
+	int num_devices;
+	void *device = NULL;
+	int err = 0;
+	int i;
+	int32_t tunnel_en =0;
+	int32_t sriov;
+	//uint8_t mac_address[6];
+
+	device_list = devx_get_device_list(&num_devices);	
+	//return rte_eth_dev_pci_generic_probe(pdev, sizeof(struct mlx5_mdev_priv),
+	//		mlx5_mdev_init);
+	while (num_devices !=0) {
+		struct rte_pci_addr pci_addr;
+
+		num_devices--;
+		if (devx_device_to_pci_addr(device_list[num_devices],
+						&pci_addr))
+			continue;
+		if ((pci_dev->addr.domain != pci_addr.domain) ||
+		    (pci_dev->addr.bus != pci_addr.bus) ||
+		    (pci_dev->addr.devid != pci_addr.devid) ||
+		    (pci_dev->addr.function != pci_addr.function))
+			continue;
+		sriov = ((pci_dev->id.device_id ==
+		       PCI_DEVICE_ID_MELLANOX_CONNECTX4VF) ||
+		      (pci_dev->id.device_id ==
+		       PCI_DEVICE_ID_MELLANOX_CONNECTX4LXVF) ||
+		      (pci_dev->id.device_id ==
+		       PCI_DEVICE_ID_MELLANOX_CONNECTX5VF) ||
+		      (pci_dev->id.device_id ==
+		       PCI_DEVICE_ID_MELLANOX_CONNECTX5EXVF));
+		switch (pci_dev->id.device_id) {
+		case PCI_DEVICE_ID_MELLANOX_CONNECTX4:
+			tunnel_en = 1;
+			break;
+		case PCI_DEVICE_ID_MELLANOX_CONNECTX4LX:
+		case PCI_DEVICE_ID_MELLANOX_CONNECTX5:
+		case PCI_DEVICE_ID_MELLANOX_CONNECTX5VF:
+		case PCI_DEVICE_ID_MELLANOX_CONNECTX5EX:
+		case PCI_DEVICE_ID_MELLANOX_CONNECTX5EXVF:
+			tunnel_en = 1;
+			break;
+		default:
+			break;
+		}
+		INFO("PCI information matches, using device \\%s\\(SR-IOV: %s)",
+		     device_list[num_devices]->name,
+		     sriov ? "true" : "false");
+		device = devx_open_device(device_list[num_devices]);
+		err = errno;
+		
+		if (device == NULL) {
+			devx_free_device_list(device_list);
+			switch (err) {
+			case 0:
+				ERROR("cannot access device");
+				return -ENODEV;
+			case EINVAL:
+				ERROR("cannot use device");
+				return -EINVAL;
+		
+			assert(err >0);
+			return -err;
+			}
+		}
+		for (i = 0; i < 1; i++) {
+			char name[RTE_ETH_NAME_MAX_LEN];
+			//int len;
+			//uint32_t port = i+1; /* ports are indexed from one */
+			struct mlx5_mdev_priv *priv = NULL;
+			//struct ether_addr mac;
+			struct rte_eth_dev *eth_dev;
+		
+			snprintf(name, sizeof(name), PCI_PRI_FMT,
+				pci_dev->addr.domain, pci_dev->addr.bus,
+				pci_dev->addr.devid, pci_dev->addr.function);
+
+			priv = rte_zmalloc("ethdev private structure",
+						sizeof(*priv),
+						RTE_CACHE_LINE_SIZE);
+
+			if (priv == NULL) {
+				ERROR("priv alloaction failure");
+				err = ENOMEM;
+				goto port_error;
+			}	
+			eth_dev = rte_eth_dev_allocate(name);
+			priv->edev = eth_dev;
+			priv->dev = device;
+			mlx5_mdev_alloc_pd(priv);
+			err = devx_alloc_uar(priv->dev, &priv->uar_index,
+					(void *)&priv->uar); 
+			
+			if (eth_dev == NULL) {
+				ERROR("can not allocate rte ethdev");
+				err = ENOMEM;
+				goto port_error;
+			}
+			//priv_get_mac(priv, &mac_address);
+			//get_mac_address(mac_address);
+			//eth_dev->data->dev_private = priv;
+			//eth_dev->data->mac_addrs = priv->mac;
+			//eth_dev->device = &pci_dev->device;
+			//rte_eth_copy_pci_info(eth_dev, pci_dev);
+			//eth_dev->device->driver = &mlx5_driver.driver;
+			continue;		
+port_error:
+			if(priv)
+				rte_free(priv);
+			if(device)
+				devx_close_device(device);
+			goto error;	
+		}
+	}
+	return 0;
+error:
+	return -err;
+	return 0;
+}
+#endif
+#if 0
+static int mlx5_mdev_pci_remove(struct rte_pci_device *pci_dev)
+{
+	return rte_eth_dev_pci_generic_remove(pci_dev, mlx5_mdev_uninit);
+}
+#endif
 static const struct rte_pci_id mlx5_mdev_pci_id_map[] = {
 	{
 		RTE_PCI_DEVICE(PCI_VENDOR_ID_MELLANOX,

@@ -136,7 +136,7 @@ check_all_ports_link_status(uint16_t port_num, uint32_t port_mask)
 #define CHECK_INTERVAL 100 /* 100ms */
 #define MAX_CHECK_TIME 30 /* 3s (30 * 100ms) in total */
 	uint16_t portid;
-	uint8_t count, all_ports_up, print_flag = 0;
+	uint8_t count, all_ports_up, print_flag = 1;
 	struct rte_eth_link link;
 
 	printf("Checking link statuses...\n");
