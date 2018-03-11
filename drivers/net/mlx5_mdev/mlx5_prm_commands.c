@@ -417,3 +417,139 @@ struct mlx5_mdev_mkey *mlx5_mdev_create_mkey(struct mlx5_mdev_priv *priv,
 
 	return mkey;
 }
+
+static int
+mlx5_mdev_query_hca_cap_gen(void *ctx, struct mlx5_mdev_cap *caps)
+{
+	uint32_t in[MLX5_ST_SZ_DW(query_hca_cap_in) + MLX5_ST_SZ_DW(cmd_pas) * 2] = {0};
+	uint32_t out[MLX5_ST_SZ_DW(query_hca_cap_out)] = {0};
+	int status, syndrome, err;
+
+	MLX5_SET(query_hca_cap_in, in, opcode, MLX5_CMD_OP_QUERY_HCA_CAP);
+	MLX5_SET(query_hca_cap_in, in, op_mod,
+		 (MLX5_CAP_GENERAL << 1) |
+		 (MLX5_HCA_CAP_OPMOD_GET_CUR & 0x1));
+
+	err = devx_cmd(ctx, in, sizeof(in), out, sizeof(out));
+	if (err) {
+		printf("query HCA capabilities failed %d", errno);
+		return err;
+	}
+	status = MLX5_GET(query_hca_cap_out, out, status);
+	syndrome = MLX5_GET(query_hca_cap_out, out, syndrome);
+	printf("mdev_priv_query_hca_cap status %x, syndrome = %x\n",status, syndrome);
+	if (!status)
+		rte_memcpy(caps->gen,
+		           MLX5_ADDR_OF(query_hca_cap_out, out, capability),
+		           sizeof(caps->gen));
+	return status;
+}
+
+static int
+mlx5_mdev_query_offload_cap(void *ctx, struct mlx5_mdev_cap *caps)
+{
+	uint32_t in[MLX5_ST_SZ_DW(query_hca_cap_in) + MLX5_ST_SZ_DW(cmd_pas) * 2] = {0};
+	uint32_t out[MLX5_ST_SZ_DW(query_hca_cap_out)] = {0};
+	int status, syndrome, err;
+
+	MLX5_SET(query_hca_cap_in, in, opcode, MLX5_CMD_OP_QUERY_HCA_CAP);
+	MLX5_SET(query_hca_cap_in, in, op_mod,
+		 (MLX5_CAP_ETHERNET_OFFLOADS << 1) |
+		 (MLX5_HCA_CAP_OPMOD_GET_CUR & 0x1));
+
+	err = devx_cmd(ctx, in, sizeof(in), out, sizeof(out));
+	if (err) {
+		printf("query offload capabilities failed %d", errno);
+		return err;
+	}
+	status = MLX5_GET(query_hca_cap_out, out, status);
+	syndrome = MLX5_GET(query_hca_cap_out, out, syndrome);
+	printf("mlx5_mdev_query_offload_cap status %x, syndrome = %x\n",status, syndrome);
+	if (!status)
+		rte_memcpy(caps->eth,
+		           MLX5_ADDR_OF(query_hca_cap_out, out, capability),
+		           sizeof(caps->eth));
+	return status;
+}
+
+static int
+mlx5_mdev_query_hca_cap_ftn(void *ctx, struct mlx5_mdev_cap *caps)
+{
+	uint32_t in[MLX5_ST_SZ_DW(query_hca_cap_in) + MLX5_ST_SZ_DW(cmd_pas) * 2] = {0};
+	uint32_t out[MLX5_ST_SZ_DW(query_hca_cap_out)] = {0};
+	int status, syndrome, err;
+
+	MLX5_SET(query_hca_cap_in, in, opcode, MLX5_CMD_OP_QUERY_HCA_CAP);
+	MLX5_SET(query_hca_cap_in, in, op_mod,
+		 (MLX5_CAP_FLOW_TABLE << 1) |
+		 (MLX5_HCA_CAP_OPMOD_GET_CUR & 0x1));
+	err = devx_cmd(ctx, in, sizeof(in), out, sizeof(out));
+	if (err) {
+		ERROR("query flow capabilities failed %d", errno);
+		return err;
+	}
+	status = MLX5_GET(query_hca_cap_out, out, status);
+	syndrome = MLX5_GET(query_hca_cap_out, out, syndrome);
+	printf("mlx5_mdev_query_hca_cap_ftn status %x, syndrome = %x, sizeof %lu\n",
+		status, syndrome, sizeof(caps->ftn));
+	if(!status)
+		rte_memcpy(caps->ftn,
+		           MLX5_ADDR_OF(query_hca_cap_out, out, capability),
+		           sizeof(caps->ftn));
+	return status;
+}
+
+
+int
+mlx5_mdev_query_hca_cap(void *ctx, struct mlx5_mdev_cap *caps)
+{
+	if (mlx5_mdev_query_hca_cap_gen(ctx, caps) ||
+	    mlx5_mdev_query_offload_cap(ctx, caps) ||
+ 	    mlx5_mdev_query_hca_cap_ftn(ctx, caps) ||
+	    0)
+		return -EFAULT;
+
+	return 0;
+}
+
+int
+mlx5_mdev_check_hca_cap(struct mlx5_mdev_cap *caps)
+{
+	if ((MLX5_CAP_GEN(caps, port_type) != MLX5_CAP_PORT_TYPE_ETH) ||
+	    (MLX5_CAP_GEN(caps, num_ports) > 1)	||
+	    (MLX5_CAP_GEN(caps, cqe_version) != 1) ||
+	    0) {
+		RTE_LOG(ERR, PMD, "mlx5_mdev_check_hca_cap failed\n");
+		return -EOPNOTSUPP;
+	}
+
+	return 0;
+}
+
+int
+mlx5_mdev_query_vport_state(void *ctx, uint8_t *admin_state, uint8_t *state)
+{
+	uint32_t in[MLX5_ST_SZ_DW(query_vport_state_in) + MLX5_ST_SZ_DW(cmd_pas) * 2] = {0};
+	uint32_t out[MLX5_ST_SZ_DW(query_vport_state_out)] = {0};
+	int status, syndrome, err;
+
+	MLX5_SET(query_vport_state_in, in, opcode,
+		 MLX5_CMD_OP_QUERY_VPORT_STATE);
+	MLX5_SET(query_vport_state_in, in, op_mod,
+		 MLX5_QUERY_VPORT_STATE_IN_OP_MOD_VNIC_VPORT);
+	MLX5_SET(query_vport_state_in, in, other_vport, 0);
+
+	err = devx_cmd(ctx, in, sizeof(in), out, sizeof(out));
+	if (err) {
+		printf("query HCA capabilities failed %d", errno);
+		return err;
+	}
+	status = MLX5_GET(query_vport_state_out, out, status);
+	syndrome = MLX5_GET(query_vport_state_out, out, syndrome);
+	printf("mlx5_mdev_query_vport_state status %x, syndrome = %x\n",status, syndrome);
+	if (!status) {
+		*admin_state = MLX5_GET(query_vport_state_out, out, admin_state);
+		*state = MLX5_GET(query_vport_state_out, out, state);
+	}
+	return status;
+}

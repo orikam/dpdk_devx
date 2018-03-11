@@ -33,7 +33,7 @@
 #ifndef RTE_PMD_MLX5_MDEV_H_
 #define RTE_PMD_MLX5_MDEV_H_
 
-#endif
+#endif /* RTE_PMD_MLX5_MDEV_H_ */
 
 
 

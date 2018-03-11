@@ -292,6 +292,7 @@ static void mlx5_mdev_teardown_hca(struct mlx5_mdev_context *ctx)
 	mlx5_mdev_cmd_exec(ctx, in, sizeof(in), out, sizeof(out));
 }
 
+#if 0
 static void mlx5_mdev_get_hca_cap_gen(struct mlx5_mdev_context *ctx)
 {
 	uint32_t in[MLX5_ST_SZ_DW(query_hca_cap_in)]   = {0};
@@ -356,7 +357,7 @@ static int mlx5_mdev_check_hca_cap(struct mlx5_mdev_context *ctx)
 
 	return 0;
 }
-
+#endif
 static void mlx5_mdev_query_nic_vport_mac_addr(struct mlx5_mdev_context *ctx,
 					   struct ether_addr *addr)
 {
@@ -507,8 +508,8 @@ struct mlx5_mdev_context * mdev_open_device(void *owner,
 	err = mlx5_mdev_satisfy_startup_pages(ctx, 0);
 	err = mlx5_mdev_init_hca(ctx);
 
-	mlx5_mdev_get_hca_cap(ctx);
-	err = mlx5_mdev_check_hca_cap(ctx);
+	// mlx5_mdev_get_hca_cap(ctx);
+	//err = mlx5_mdev_check_hca_cap(ctx);
 	if (err)
 		goto err_teardown_hca;
 	err = mlx5_mdev_set_edev_addr(ctx);

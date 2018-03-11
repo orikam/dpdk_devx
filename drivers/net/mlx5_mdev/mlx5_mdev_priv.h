@@ -39,6 +39,11 @@ enum devx_access_flags {
 	DEVX_ACCESS_ON_DEMAND		= (1<<6),
 };
 
+enum mlx5_cap_mode {
+	HCA_CAP_OPMOD_GET_MAX	= 0,
+	HCA_CAP_OPMOD_GET_CUR	= 1,
+};
+
 /* Default PMD specific parameter value. */
 #define MLX5_ARG_UNSET (-1)
 
@@ -149,6 +154,8 @@ struct mdev_dbr{
 	struct devx_obj_handle *object;
 };
 
+
+
 struct mlx5_mdev_priv {
 	struct rte_eth_dev *dev;
 	char ibdev_path[256]; /* IB device path for secondary */
@@ -171,6 +178,8 @@ struct mlx5_mdev_priv {
 	LIST_HEAD(mr, mlx5_mdev_mr) mr; /* Memory region. */
 	LIST_HEAD(txq, mlx5_txq_ctrl) txqsctrl; /* DPDK Tx queues. */
 	LIST_HEAD(txqmdev, mlx5_txq_mdev) txqsmdev; /* mdev Tx queues. */
+	struct mlx5_mdev_cap caps;
+	//struct mlx5_mdev_cap caps_max;  TODO: Do we need caps max ?
 };
 
 struct mdev_cq {
@@ -289,7 +298,7 @@ priv_unlock(struct mlx5_mdev_priv *priv)
 	rte_spinlock_unlock(&priv->lock);
 }
 
-
+/* mlx5_prm_commands.c */
 
 struct mdev_eq *
 mlx5_mdev_create_eq(struct mlx5_mdev_priv *priv,
@@ -310,6 +319,11 @@ int mlx5_mdev_alloc_pd(struct mlx5_mdev_priv *priv);
 int mlx5_mdev_alloc_td(struct mlx5_mdev_priv *priv);
 struct mlx5_mdev_mkey *mlx5_mdev_create_mkey(struct mlx5_mdev_priv *priv,
 			struct mlx5_mdev_mkey_attr *mkey_attr);
+int mlx5_mdev_query_hca_cap(void *ctx, struct mlx5_mdev_cap *caps);
+int mlx5_mdev_check_hca_cap(struct mlx5_mdev_cap *caps);
+int mlx5_mdev_query_vport_state(void *ctx,
+				uint8_t *admin_state, uint8_t *state);
+
 
 
 /* mlx5_ethdev.c */
@@ -324,12 +338,18 @@ int priv_get_mtu(struct mlx5_mdev_priv *, uint16_t *);
 int priv_set_flags(struct mlx5_mdev_priv *, unsigned int, unsigned int);
 eth_tx_burst_t
 priv_select_tx_function(struct mlx5_mdev_priv *priv, struct rte_eth_dev *dev);
-int
-mlx5_dev_configure(struct rte_eth_dev *dev);
+int mlx5_dev_configure(struct rte_eth_dev *dev);
+int mlx5_mdev_device_to_pci_addr(const struct devx_device *device,
+				 struct rte_pci_addr *pci_addr);
 
 /*mlx5_mac.c */
-int
-mdev_priv_get_mac(struct mlx5_mdev_priv *priv, uint8_t (*mac)[ETHER_ADDR_LEN]);
+int mdev_priv_get_mac(struct mlx5_mdev_priv *priv,
+		      uint8_t (*mac)[ETHER_ADDR_LEN]);
+void mlx5_mdev_mac_addr_remove(struct rte_eth_dev *dev, uint32_t index);
+int mlx5_mdev_mac_addr_add(struct rte_eth_dev *dev, struct ether_addr *mac,
+		  	   uint32_t index, uint32_t vmdq);
+void mlx5_mdev_mac_addr_set(struct rte_eth_dev *dev,
+			    struct ether_addr *mac_addr);
 
 /* mlx5_mr.c */
 

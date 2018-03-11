@@ -43,3 +43,79 @@ mdev_priv_get_mac(struct mlx5_mdev_priv *priv, uint8_t (*mac)[ETHER_ADDR_LEN])
 	memcpy(mac, request.ifr_hwaddr.sa_data, ETHER_ADDR_LEN);
 	return 0;
 }
+
+/**
+ * DPDK callback to remove a MAC address.
+ *
+ * @param dev
+ *   Pointer to Ethernet device structure.
+ * @param index
+ *   MAC address index.
+ */
+void
+mlx5_mdev_mac_addr_remove(struct rte_eth_dev *dev, uint32_t index)
+{
+	assert(index < MLX5_MAX_MAC_ADDRESSES);
+	memset(&dev->data->mac_addrs[index], 0, sizeof(struct ether_addr));
+#if 0
+	if (!dev->data->promiscuous)
+		mlx5_traffic_restart(dev);
+#endif
+}
+
+/**
+ * DPDK callback to add a MAC address.
+ *
+ * @param dev
+ *   Pointer to Ethernet device structure.
+ * @param mac_addr
+ *   MAC address to register.
+ * @param index
+ *   MAC address index.
+ * @param vmdq
+ *   VMDq pool index to associate address with (ignored).
+ *
+ * @return
+ *   0 on success.
+ */
+int
+mlx5_mdev_mac_addr_add(struct rte_eth_dev *dev, struct ether_addr *mac,
+		  uint32_t index, uint32_t vmdq)
+{
+	unsigned int i;
+	int ret = 0;
+
+	(void)vmdq;
+	assert(index < MLX5_MAX_MAC_ADDRESSES);
+	/* First, make sure this address isn't already configured. */
+	for (i = 0; (i != MLX5_MAX_MAC_ADDRESSES); ++i) {
+		/* Skip this index, it's going to be reconfigured. */
+		if (i == index)
+			continue;
+		if (memcmp(&dev->data->mac_addrs[i], mac, sizeof(*mac)))
+			continue;
+		/* Address already configured elsewhere, return with error. */
+		return EADDRINUSE;
+	}
+	dev->data->mac_addrs[index] = *mac;
+#if 0
+	if (!dev->data->promiscuous)
+		mlx5_traffic_restart(dev);
+#endif
+	return ret;
+}
+
+/**
+ * DPDK callback to set primary MAC address.
+ *
+ * @param dev
+ *   Pointer to Ethernet device structure.
+ * @param mac_addr
+ *   MAC address to register.
+ */
+void
+mlx5_mdev_mac_addr_set(struct rte_eth_dev *dev, struct ether_addr *mac_addr)
+{
+	DEBUG("%p: setting primary MAC address", (void *)dev);
+	mlx5_mdev_mac_addr_add(dev, mac_addr, 0, 0);
+}

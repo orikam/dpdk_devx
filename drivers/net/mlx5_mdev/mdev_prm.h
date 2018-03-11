@@ -109,6 +109,7 @@ enum {
 	MLX5_CMD_OP_DESTROY_EQ                    = 0x302,
 	MLX5_CMD_OP_CREATE_CQ                     = 0x400,
 	MLX5_CMD_OP_DESTROY_CQ                    = 0x401,
+	MLX5_CMD_OP_QUERY_VPORT_STATE             = 0x750,
 	MLX5_CMD_OP_QUERY_NIC_VPORT_CONTEXT       = 0x754,
 	MLX5_CMD_OP_ALLOC_PD                      = 0x800,
 	MLX5_CMD_OP_DEALLOC_PD                    = 0x801,
@@ -479,7 +480,9 @@ struct mlx5_ifc_cmd_hca_cap_bits {
 	u8	   num_of_uars_per_page[0x20];
 	u8         reserved_at_540[0x40];
 
-	u8         reserved_at_580[0x3f];
+	u8         reserved_at_580[0x3d];
+	u8         cqe_128_always[0x1];
+	u8         cqe_compression_128b[0x1];
 	u8         cqe_compression[0x1];
 
 	u8         cqe_compression_timeout[0x10];
@@ -876,6 +879,43 @@ struct mlx5_ifc_query_nic_vport_context_in_bits {
 	u8         reserved_at_60[0x5];
 	u8         allowed_list_type[0x3];
 	u8         reserved_at_68[0x18];
+};
+
+enum {
+	MLX5_QUERY_VPORT_STATE_OUT_STATE_DOWN  = 0x0,
+	MLX5_QUERY_VPORT_STATE_OUT_STATE_UP    = 0x1,
+};
+
+struct mlx5_ifc_query_vport_state_out_bits {
+	u8         status[0x8];
+	u8         reserved_at_8[0x18];
+
+	u8         syndrome[0x20];
+
+	u8         reserved_at_40[0x20];
+
+	u8         reserved_at_60[0x18];
+	u8         admin_state[0x4];
+	u8         state[0x4];
+};
+
+enum {
+	MLX5_QUERY_VPORT_STATE_IN_OP_MOD_VNIC_VPORT  = 0x0,
+	MLX5_QUERY_VPORT_STATE_IN_OP_MOD_ESW_VPORT   = 0x1,
+};
+
+struct mlx5_ifc_query_vport_state_in_bits {
+	u8         opcode[0x10];
+	u8         reserved_at_10[0x10];
+
+	u8         reserved_at_20[0x10];
+	u8         op_mod[0x10];
+
+	u8         other_vport[0x1];
+	u8         reserved_at_41[0xf];
+	u8         vport_number[0x10];
+
+	u8         reserved_at_60[0x20];
 };
 
 struct mlx5_ifc_alloc_pd_out_bits {
@@ -1846,4 +1886,46 @@ __mlx5_mask(typ, fld))
 			}						  \
 		tmp;							  \
 		})
+
+// TODO: see https://elixir.bootlin.com/linux/v4.6/source/include/linux/mlx5/device.h#L1257
+
+enum {
+	MLX5_MAX_PORTS	= 2,
+};
+
+struct mlx5_mdev_port_caps {
+	int	gid_table_len;
+	int	pkey_table_len;
+	u8	ext_port_cap;
+};
+
+struct mlx5_mdev_cap {
+	uint32_t gen[MLX5_ST_SZ_DW(cmd_hca_cap)];
+	uint32_t eth[MLX5_ST_SZ_DW(per_protocol_networking_offload_caps)];
+	uint32_t ftn[MLX5_ST_SZ_DW(flow_table_nic_cap)];
+};
+
+/* GET Dev Caps macros */
+#define MLX5_CAP_GEN(mlx5_mdev_cap, cap) \
+	MLX5_GET(cmd_hca_cap, (mlx5_mdev_cap)->gen, cap)
+
+#define MLX5_CAP_ETH(mlx5_mdev_cap, cap) \
+	MLX5_GET(per_protocol_networking_offload_caps,\
+		 (mlx5_mdev_cap)->eth, cap)
+
+#define MLX5_CAP_FTN(mlx5_mdev_cap, cap) \
+	MLX5_GET(flow_table_nic_cap, (mlx5_mdev_cap)->ftn, cap)
+
+#if 0
+#define MLX5_CAP_GEN_MAX(mlx5_mdev_cap_max, cap) \
+	MLX5_GET(cmd_hca_cap, (mlx5_mdev_cap)->caps_max.gen, cap)
+
+#define MLX5_CAP_ETH_MAX(mlx5_mdev_cap_max, cap) \
+	MLX5_GET(per_protocol_networking_offload_caps,\
+		 (mlx5_mdev_cap_max)->eth, cap)
+
+#define MLX5_CAP_FTN_MAX(mlx5_mdev_cap, cap) \
+	MLX5_GET(flow_table_nic_cap, (mlx5_mdev_cap)->caps_max.ftn, cap)
+#endif
+
 #endif

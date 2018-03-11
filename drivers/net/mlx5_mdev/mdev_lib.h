@@ -39,11 +39,6 @@ struct mdv_mr {
 	struct mlx5_mdev_context *ctx;
 };
 
-struct mlx5_mdev_cap {
-	uint32_t gen[MLX5_ST_SZ_DW(cmd_hca_cap)];
-	uint32_t eth[MLX5_ST_SZ_DW(per_protocol_networking_offload_caps)];
-	uint32_t ftn[MLX5_ST_SZ_DW(flow_table_nic_cap)];
-};
 
 typedef struct mlx5_mdev_memzone * (alloc_dma_memory_t)(void *owner, const char *name,
 						size_t size, size_t align);
@@ -63,12 +58,6 @@ struct mlx5_mdev_context {
 	uint32_t uar;
 };
 
-#define MLX5_CAP_GEN(mdev, mcap) \
-	MLX5_GET(cmd_hca_cap, mdev->cap.gen, mcap)
-#define MLX5_CAP_ETH(mdev, mcap) \
-	MLX5_GET(per_protocol_networking_offload_caps, mdev->cap.eth, mcap)
-#define MLX5_CAP_FTN(mdev, mcap) \
-	MLX5_GET(flow_table_nic_cap, mdev->cap.ftn, mcap)
 
 int mlx5_mdev_cmd_exec(struct mlx5_mdev_context *ctx, void *in, int ilen,
 			  void *out, int olen);

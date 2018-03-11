@@ -31,9 +31,9 @@
 
 #include "devx.h"
 #include "mlx5_mdev_utils.h"
-#include "mdev_lib.h"
+//#include "mdev_lib.h"
+#include "mdev_prm.h"
 #include "mlx5_mdev_priv.h"
-#include "mlx5_mdev.h"
 
 /* Device parameter to enable RX completion queue compression. */
 #define MLX5_RXQ_CQE_COMP_EN "rxq_cqe_comp_en"
@@ -61,16 +61,6 @@
 
 /* Device parameter to enable hardware Rx vector. */
 #define MLX5_RX_VEC_EN "rx_vec_en"
-
-#ifndef HAVE_IBV_MLX5_MOD_MPW
-#define MLX5DV_CONTEXT_FLAGS_MPW_ALLOWED (1 << 2)
-#define MLX5DV_CONTEXT_FLAGS_ENHANCED_MPW (1 << 3)
-#endif
-
-#ifndef HAVE_IBV_MLX5_MOD_CQE_128B_COMP
-#define MLX5DV_CONTEXT_FLAGS_CQE_128B_COMP (1 << 4)
-#endif
-
 
 static inline struct mlx5_mdev_memzone * alloc_pinned(void * edev,
 					const char *name,
@@ -252,7 +242,7 @@ mlx5_args_check(const char *key, const char *val, void *opaque)
  * @return
  *   0 on success, errno value on failure.
  */
-static int
+static int __rte_unused
 mlx5_mdev_args(struct mlx5_mdev_dev_config *config, struct rte_devargs *devargs)
 {
 	const char **params = (const char *[]){
@@ -291,6 +281,8 @@ mlx5_mdev_args(struct mlx5_mdev_dev_config *config, struct rte_devargs *devargs)
 	return 0;
 }
 
+static struct rte_pci_driver mlx5_mdev_pci_driver;
+
 /*
  * Reserved UAR address space for TXQ UAR(hw doorbell) mapping, process
  * local resource used by both primary and secondary to avoid duplicate
@@ -309,7 +301,7 @@ static void *uar_base;
  * @return
  *   0 on success, errno value on failure.
  */
-static int
+static int __rte_unused
 priv_uar_init_primary(struct mlx5_mdev_priv *priv)
 {
 	void *addr = (void *)0;
@@ -350,66 +342,42 @@ priv_uar_init_primary(struct mlx5_mdev_priv *priv)
 }
 
 static int
-mlx5_mdev_init(struct rte_eth_dev *edev)
+mlx5_mdev_pci_probe(struct rte_pci_driver *pci_drv,
+		    struct rte_pci_device *pci_dev)
 {
 	struct devx_device **list;
-	void *device = NULL;
-
+	struct devx_device *devx_dev;
+	struct mlx5_mdev_cap *caps = NULL;
+	void *attr_ctx = NULL;
 	int err = 0;
-	struct mlx5_mdev_priv *priv = edev->data->dev_private;
 	unsigned int sriov;
-	unsigned int mps;
-	unsigned int cqe_comp;
-	unsigned int tunnel_en = 0;
+	unsigned int mps __rte_unused;
+	unsigned int cqe_comp __rte_unused;
+	unsigned int __rte_unused tunnel_en = 0;
 	int idx;
 	int i;
+	int num_ports = 0;
 
-	struct rte_pci_device *pci_dev = RTE_ETH_DEV_TO_PCI(edev);
+	printf("oooOri device name %s\n",pci_dev->device.name);
+	(void)pci_drv;
+	assert(pci_drv == &mlx5_mdev_pci_driver);
+
 	/* Get mlx5_dev[] index. */
 	idx = mlx5_dev_idx(&pci_dev->addr);
 	if (idx == -1) {
 		ERROR("this driver cannot support any more adapters");
 		return -ENOMEM;
 	}
-	DEBUG("using driver device index %d for device %s",
-	      idx, edev->device->name);
+	DEBUG("using driver device index %d", idx);
+	ERROR("==== using driver device index %d", idx);
 
 	/* Save PCI address. */
 	mlx5_dev[idx].pci_addr = pci_dev->addr;
-	ERROR("====test: %04x:%02x:%02x.%1x",
-		mlx5_dev[idx].pci_addr.domain,
-		mlx5_dev[idx].pci_addr.bus,
-		mlx5_dev[idx].pci_addr.devid,
-		mlx5_dev[idx].pci_addr.function);
-
-	sriov = ((pci_dev->id.device_id ==
-	       PCI_DEVICE_ID_MELLANOX_CONNECTX4VF) ||
-	      (pci_dev->id.device_id ==
-	       PCI_DEVICE_ID_MELLANOX_CONNECTX4LXVF) ||
-	      (pci_dev->id.device_id ==
-	       PCI_DEVICE_ID_MELLANOX_CONNECTX5VF) ||
-	      (pci_dev->id.device_id ==
-	       PCI_DEVICE_ID_MELLANOX_CONNECTX5EXVF));
-	switch (pci_dev->id.device_id) {
-	case PCI_DEVICE_ID_MELLANOX_CONNECTX4:
-		tunnel_en = 1;
-		break;
-	case PCI_DEVICE_ID_MELLANOX_CONNECTX4LX:
-	case PCI_DEVICE_ID_MELLANOX_CONNECTX5:
-	case PCI_DEVICE_ID_MELLANOX_CONNECTX5VF:
-	case PCI_DEVICE_ID_MELLANOX_CONNECTX5EX:
-	case PCI_DEVICE_ID_MELLANOX_CONNECTX5EXVF:
-		tunnel_en = 1;
-		break;
-	default:
-		break;
-	}
-
 	list = devx_get_device_list(&i);
 	if (list == NULL) {
 		assert(errno);
 		if (errno == ENOSYS)
-			ERROR("cannot list devices, is ib_uverbs loaded ?");
+			ERROR("cannot list devices, is devx loaded ?");
 		return -errno;
 	}
 	assert(i >= 0);
@@ -421,109 +389,117 @@ mlx5_mdev_init(struct rte_eth_dev *edev)
 		struct rte_pci_addr pci_addr;
 
 		--i;
-		printf("%d\n, %s\n, %s\n, %s\n",i,list[i]->name,list[i]->dev_path,list[i]->ibdev_path);
 		DEBUG("checking device \"%s\"", list[i]->name);
-		if (devx_device_to_pci_addr(list[i], &pci_addr))
+		ERROR("====checking device \"%s\"", list[i]->name);
+		if (mlx5_mdev_device_to_pci_addr(list[i], &pci_addr))
 			continue;
 		if ((pci_dev->addr.domain != pci_addr.domain) ||
 		    (pci_dev->addr.bus != pci_addr.bus) ||
 		    (pci_dev->addr.devid != pci_addr.devid) ||
 		    (pci_dev->addr.function != pci_addr.function))
 			continue;
-		printf("PCI information matches, using device \"%s\"\n", list[i]->name);
-		INFO("PCI information matches, using device \"%s\"", list[i]->name);
-		device = devx_open_device(list[i]); // TODO: Add this to mdev_open_device
-		err = errno;
-		if (device == NULL) {
-			devx_free_device_list(list);
-			switch (err) {
-			case 0:
-				ERROR("cannot access device");
-				return -ENODEV;
-			case EINVAL:
-				ERROR("cannot use device");
-				return -EINVAL;
-
-			assert(err >0);
-			return -err;
-			}
+		sriov = ((pci_dev->id.device_id ==
+		       PCI_DEVICE_ID_MELLANOX_CONNECTX4VF) ||
+		      (pci_dev->id.device_id ==
+		       PCI_DEVICE_ID_MELLANOX_CONNECTX4LXVF) ||
+		      (pci_dev->id.device_id ==
+		       PCI_DEVICE_ID_MELLANOX_CONNECTX5VF) ||
+		      (pci_dev->id.device_id ==
+		       PCI_DEVICE_ID_MELLANOX_CONNECTX5EXVF));
+		switch (pci_dev->id.device_id) {
+		case PCI_DEVICE_ID_MELLANOX_CONNECTX4:
+			tunnel_en = 1;
+			break;
+		case PCI_DEVICE_ID_MELLANOX_CONNECTX4LX:
+		case PCI_DEVICE_ID_MELLANOX_CONNECTX5:
+		case PCI_DEVICE_ID_MELLANOX_CONNECTX5VF:
+		case PCI_DEVICE_ID_MELLANOX_CONNECTX5EX:
+		case PCI_DEVICE_ID_MELLANOX_CONNECTX5EXVF:
+			tunnel_en = 1;
+			break;
+		default:
+			break;
 		}
+		//INFO("PCI information matches, using device \"%s\""
+		ERROR("===== PCI information matches, using device \"%s\""
+		     " (SR-IOV: %s)",
+		     list[i]->name,
+		     sriov ? "true" : "false");
+		attr_ctx = devx_open_device(list[i]);
+		err = errno;
 		break;
 	}
-
-	priv->dev = edev;
-	edev->dev_ops = &mlx5_mdev_dev_ops;
-	priv->ctx = devx_open_device(list[i]);;
-	strncpy(priv->ibdev_path, list[i]->ibdev_path,
-				sizeof(priv->ibdev_path));
-	printf("device name == %s\n",priv->ibdev_path);
-	err = errno;
-	if (priv->ctx == NULL) {
+	if (attr_ctx == NULL) {
 		devx_free_device_list(list);
 		switch (err) {
 		case 0:
-			ERROR("cannot access device, is driver loaded?");
+			ERROR("cannot access device, is devx loaded?");
 			return -ENODEV;
 		case EINVAL:
 			ERROR("cannot use device, are drivers up to date?");
 			return -EINVAL;
 		}
-		assert(err > 0);
+		assert(err >0);
 		return -err;
 	}
-	INFO("Device \"%04x:%02x:%02x.%1x\" (SR-IOV: %s, TUNNEL: %s)",
-		mlx5_dev[idx].pci_addr.domain,
-		mlx5_dev[idx].pci_addr.bus,
-		mlx5_dev[idx].pci_addr.devid,
-		mlx5_dev[idx].pci_addr.function,
-		sriov ? "true" : "false",
-		tunnel_en ? "true" : "false");
-
-
+	devx_dev = list[i];
 
 	DEBUG("device opened");
-	ERROR(" ========= device opened ==============");
-#if 0 // FIXME: device is queried during init.
+	ERROR("==== device opened");
+
+	/* Query and verify device capabilities */
+	caps = rte_zmalloc("HCA caps", sizeof(*caps), RTE_CACHE_LINE_SIZE);
+	if (caps == NULL) {
+		ERROR("failed to allocate memory for HCA capabilities");
+		err = ENOMEM;
+		goto error;
+	}
+	if (mlx5_mdev_query_hca_cap(attr_ctx, caps) ||
+	    mlx5_mdev_check_hca_cap(caps)) {
+		err = EFAULT;
+		goto error;
+	}
 	/*
 	 * Multi-packet send is supported by ConnectX-4 Lx PF as well
 	 * as all ConnectX-5 devices.
 	 */
-
-#else
-	DEBUG("MPW isn't supported");
-	mps = MLX5_MPW_DISABLED;
-#endif
-#if 0 // FIXME:
+	if (MLX5_CAP_ETH(caps, multi_pkt_send_wqe)) {
+		if (MLX5_CAP_ETH(caps, enhanced_multi_pkt_send_wqe)) {
+			DEBUG("Enhanced MPW is supported");
+			ERROR("======== Enhanced MPW is supported");
+			mps = MLX5_MPW_ENHANCED;
+		} else {
+			DEBUG("MPW is supported");
+			ERROR("======= MPW is supported");
+			mps = MLX5_MPW;
+		}
+	} else {
+		DEBUG("MPW isn't supported");
+		ERROR("======= MPW isn't supported");
+		mps = MLX5_MPW_DISABLED;
+	}
 	if (RTE_CACHE_LINE_SIZE == 128 &&
-	    !(attrs_out.flags & MLX5DV_CONTEXT_FLAGS_CQE_128B_COMP))
+	    !(MLX5_CAP_GEN(caps, cqe_compression) &&
+	      MLX5_CAP_GEN(caps, cqe_compression_128b))) // FIXME ? is this the correct check ?
 		cqe_comp = 0;
 	else
-
 		cqe_comp = 1;
-#endif
-	cqe_comp = 1;
-#if 0 // FIXME: Fill info
-	if (mlx5_glue->query_device_ex(attr_ctx, NULL, &device_attr))
-		goto error;
-	INFO("%u port(s) detected", device_attr.orig_attr.phys_port_cnt);
+	num_ports = MLX5_CAP_GEN(caps, num_ports);
+	INFO("%u port(s) detected", num_ports);
+	ERROR("======= %u port(s) detected", num_ports);
 
-	device_attr.orig_attr.phys_port_cnt = 1;   // FIXME: MLX5_CAP_GEN(priv->mpriv.dev_context, num_ports);
-	if (device_attr.orig_attr.phys_port_cnt > 1) {
-		ERROR("Supports only 1:1 mapping between ports and pci_device");
-		goto error;
-	}
-#endif
-	for (i = 0; i < 1; i++) {
-//		char name[RTE_ETH_NAME_MAX_LEN];
-		//int len;
+	for (i = 0; i < num_ports; i++) {
+		char name[RTE_ETH_NAME_MAX_LEN];
+		int len;
 		uint32_t port = i + 1; /* ports are indexed from one */
 		uint32_t test = (1 << i);
-		//struct ibv_port_attr port_attr;
-		struct mlx5_mdev_priv *priv = edev->data->dev_private;
-		struct rte_eth_dev *eth_dev = edev;
-		//struct ibv_device_attr_ex device_attr_ex;
+		struct mlx5_mdev_priv *priv = NULL;
+		void *dev_ctx = NULL;
+		struct rte_eth_dev *eth_dev;
 		struct ether_addr mac;
-		//uint16_t num_vfs = 0;
+		//uint16_t num_vfs = 0; TODO: handle me
+		uint8_t port_admin_state;
+		uint8_t port_state;
 		struct mlx5_mdev_dev_config config = {
 			.cqe_comp = cqe_comp,
 			.mps = mps,
@@ -536,8 +512,13 @@ mlx5_mdev_init(struct rte_eth_dev *edev)
 			.inline_max_packet_sz = MLX5_ARG_UNSET,
 		};
 
-		mlx5_dev[idx].ports |= test;
+		len = snprintf(name, sizeof(name), PCI_PRI_FMT,
+			 pci_dev->addr.domain, pci_dev->addr.bus,
+			 pci_dev->addr.devid, pci_dev->addr.function);
+		if (num_ports > 1)
+			snprintf(name + len, sizeof(name), " port %u", i);
 
+		mlx5_dev[idx].ports |= test;
 #if 0
 		if (rte_eal_process_type() == RTE_PROC_SECONDARY) {
 			eth_dev = rte_eth_dev_attach_secondary(name);
@@ -546,28 +527,24 @@ mlx5_mdev_init(struct rte_eth_dev *edev)
 				err = ENOMEM;
 				goto error;
 			}
-			//eth_dev->device = &pci_dev->device;
+			eth_dev->device = &pci_dev->device;
 			eth_dev->dev_ops = &mlx5_dev_sec_ops;
 			priv = eth_dev->data->dev_private;
 			err = priv_uar_init_secondary(priv);
 			if (err < 0) {
-				ERROR(" =========%s: %d", __FUNCTION__, __LINE__);
 				err = -err;
 				goto error;
 			}
 			/* Receive command fd from primary process */
 			err = priv_socket_connect(priv);
 			if (err < 0) {
-				ERROR(" =========%s: %d", __FUNCTION__, __LINE__);
 				err = -err;
 				goto error;
 			}
 			/* Remap UAR for Tx queues. */
 			err = priv_tx_uar_remap(priv, err);
-			if (err) {
-				ERROR(" =========%s: %d", __FUNCTION__, __LINE__);
+			if (err)
 				goto error;
-			}
 			/*
 			 * Ethdev pointer is still required as input since
 			 * the primary device is not accessible from the
@@ -577,46 +554,33 @@ mlx5_mdev_init(struct rte_eth_dev *edev)
 				priv_select_rx_function(priv, eth_dev);
 			eth_dev->tx_pkt_burst =
 				priv_select_tx_function(priv, eth_dev);
-			ERROR(" =========%s: %d", __FUNCTION__, __LINE__);
 			continue;
 		}
 #endif
 		DEBUG("using port %u (%08" PRIx32 ")", port, test);
-#if 0
-		//FIXME query device port_attr
+		ERROR("======== using port %u (%08" PRIx32 ")", port, test);
 
-		if (MLX5_CAP_GEN(priv->mpriv.dev_context, port_type) != MLX5_CAP_PORT_TYPE_ETH) {
+		dev_ctx = devx_open_device(devx_dev);
+		if (dev_ctx == NULL) {
+			err = ENODEV;
+			goto port_error;
+		}
 
+		if (MLX5_CAP_GEN(caps, port_type) != MLX5_CAP_PORT_TYPE_ETH) {
 			ERROR("port %d is not configured in Ethernet mode",
 			      port);
 			err = EINVAL;
 			goto port_error;
 		}
 
-		if (port_attr.state != IBV_PORT_ACTIVE)
-			DEBUG("port %d is not active: \"%s\" (%d)",
-			      port, mlx5_glue->port_state_str(port_attr.state),
-			      port_attr.state);
+		if (mlx5_mdev_query_vport_state(dev_ctx,
+		                                &port_admin_state,
+		                                &port_state) ||
+		    port_admin_state  != MLX5_QUERY_VPORT_STATE_OUT_STATE_UP)
+			// DEBUG("port %d is not active: (%d)",
+			ERROR("==== port %d is not active: (%d)",
+			      port, port_admin_state);
 
-
-#endif
-		// TODO : do we need to allocate PD and TD ?
-		err = mlx5_mdev_alloc_pd(priv);
-		if (err) {
-			ERROR("PD allocation failure");
-			//goto port_error;
-		}
-		err = mlx5_mdev_alloc_td(priv);
-		if (err) {
-			ERROR("TD allocation failure");
-			//goto port_error;
-		}
-		priv->db_page = NULL;
-
-		mlx5_dev[idx].ports |= test;
-
-
-#if 0 //FIXME: should be allocated
 		/* from rte_ethdev.c */
 		priv = rte_zmalloc("ethdev private structure",
 				   sizeof(*priv),
@@ -627,13 +591,29 @@ mlx5_mdev_init(struct rte_eth_dev *edev)
 			goto port_error;
 		}
 
-		priv->ctx = ctx;
-		strncpy(priv->ibdev_path, priv->ctx->device->ibdev_path,
+		priv->db_page = NULL;
+		priv->ctx = dev_ctx;
+
+		strncpy(priv->ibdev_path, devx_dev->ibdev_path,
 			sizeof(priv->ibdev_path));
-#endif
-//		priv->device_attr = device_attr;
+
+		/* Allocate protection and transport domains. */
+		err = mlx5_mdev_alloc_pd(priv);
+		if (err) {
+			ERROR("PD allocation failure");
+			goto port_error;
+		}
+		err = mlx5_mdev_alloc_td(priv);
+		if (err) {
+			ERROR("TD allocation failure");
+			goto port_error;
+		}
+		mlx5_dev[idx].ports |= test;
+
+		//priv->device_attr = device_attr; TODO : add me
 		priv->port = port;
 		priv->mtu = ETHER_MTU;
+		rte_memcpy(&priv->caps, caps, sizeof(priv->caps));
 		err = mlx5_mdev_args(&config, pci_dev->device.devargs);
 		if (err) {
 			ERROR("failed to process device arguments: %s",
@@ -641,94 +621,79 @@ mlx5_mdev_init(struct rte_eth_dev *edev)
 			goto port_error;
 		}
 
-#if 0
-		if (mlx5_glue->query_device_ex(ctx, NULL, &device_attr_ex)) {
-			ERROR("query_device_ex() failed");
-			goto port_error;
-		}
-		config.hw_csum = !!(device_attr_ex.device_cap_flags_ex &
-				    IBV_DEVICE_RAW_IP_CSUM);
-
-
-		DEBUG("checksum offloading is %ssupported",
+		config.hw_csum = !!(MLX5_CAP_ETH(&(priv->caps), csum_cap));
+		// DEBUG("checksum offloading is %ssupported",
+		ERROR("==== checksum offloading is %ssupported",
 		      (config.hw_csum ? "" : "not "));
-#endif
-#ifdef HAVE_IBV_DEVICE_VXLAN_SUPPORT
-#if 0
-		config.hw_csum_l2tun =
-				!!(exp_device_attr.exp_device_cap_flags &
-				   IBV_DEVICE_VXLAN_SUPPORT);
-		DEBUG("Rx L2 tunnel checksum offloads are %ssupported",
+		config.hw_csum_l2tun = !!(MLX5_CAP_ETH(&(priv->caps), tunnel_stateless_vxlan));
+		//DEBUG("Rx L2 tunnel checksum offloads are %ssupported",
+		ERROR("======= Rx L2 tunnel checksum offloads are %ssupported",
 				      (config.hw_csum_l2tun ? "" : "not "));
-#endif
-#endif
 
+#ifdef HAVE_IBV_DEVICE_COUNTERS_SET_SUPPORT // TODO: Revive me
+		config.flow_counter_en =
+			!!(MLX5_CAP_HCA(priv,max_flow_counter_31_16) |
+			   MLX5_CAP_HCA(priv,max_flow_counter_15_0));
 
-#ifdef HAVE_IBV_DEVICE_COUNTERS_SET_SUPPORT
-		config.flow_counter_en = !!(device_attr.max_counter_sets);
+		// !!(device_attr.max_counter_sets);
 		//mlx5_glue->describe_counter_set(ctx, 0, &cs_desc); TODO: Revive me
 		DEBUG("counter type = %d, num of cs = %ld, attributes = %d",
 		      cs_desc.counter_type, cs_desc.num_of_cs,
 		      cs_desc.attributes);
 #endif
-#if 0
-		config.ind_table_max_size =
+		/* was device_attr_ex.rss_caps.max_rwq_indirection_table_size
+		 * derived from 1 << MLX5_CAP_GEN(&priv->caps, log_max_rqt_size), see
+		 * <kernel>/drivers/infiniband/hw/mlx5/main.c
+		 */
+		config.ind_table_max_size = 1 << (MLX5_CAP_GEN(&priv->caps, log_max_rqt_size));
 
-			device_attr_ex.rss_caps.max_rwq_indirection_table_size;
-#endif
 		/* Remove this check once DPDK supports larger/variable
 		 * indirection tables. */
 		if (config.ind_table_max_size >
 				(unsigned int)ETH_RSS_RETA_SIZE_512)
 			config.ind_table_max_size = ETH_RSS_RETA_SIZE_512;
-		DEBUG("maximum RX indirection table size is %u",
+		//DEBUG("maximum RX indirection table size is %u",
+		ERROR("========= maximum RX indirection table size is %u",
 		      config.ind_table_max_size);
-#if 0
-		config.hw_vlan_strip = !!(device_attr_ex.raw_packet_caps &
-					 IBV_RAW_PACKET_CAP_CVLAN_STRIPPING);
-#else
-		config.hw_vlan_strip = 1;  // TODO: find the correct param
-#endif
-		DEBUG("VLAN stripping is %ssupported",
+
+		config.hw_vlan_strip = !!(MLX5_CAP_ETH(&priv->caps, vlan_cap));
+		//DEBUG("VLAN stripping is %ssupported",
+		ERROR("========= VLAN stripping is %ssupported",
 		      (config.hw_vlan_strip ? "" : "not "));
-#if 0
-		config.hw_fcs_strip = !!(device_attr_ex.raw_packet_caps &
-					 IBV_RAW_PACKET_CAP_SCATTER_FCS);
-#else
-		config.hw_fcs_strip = 1;  // TODO: find the correct param
-#endif
-		DEBUG("FCS stripping configuration is %ssupported",
+
+		config.hw_fcs_strip = !!(MLX5_CAP_ETH(&priv->caps, scatter_fcs));
+		//DEBUG("FCS stripping configuration is %ssupported",
+		ERROR("========= FCS stripping configuration is %ssupported",
 		      (config.hw_fcs_strip ? "" : "not "));
 
-#ifdef HAVE_IBV_WQ_FLAG_RX_END_PADDING
-		config.hw_padding = !!device_attr_ex.rx_pad_end_addr_align;
-		DEBUG("hardware RX end alignment padding is %ssupported",
+		config.hw_padding = !!(MLX5_CAP_GEN(&priv->caps, end_pad));
+		//DEBUG("hardware RX end alignment padding is %ssupported",
+		ERROR("========= hardware RX end alignment padding is %ssupported",
 				      (config.hw_padding ? "" : "not "));
-#endif
 
-#if 0 // FIXME ADD me
-		priv_get_num_vfs(priv, &num_vfs);
-		config.sriov = (num_vfs || sriov);
-		config.tso = ((device_attr_ex.tso_caps.max_tso > 0) &&
-			      (device_attr_ex.tso_caps.supported_qpts &
-			      (1 << IBV_QPT_RAW_PACKET)));
+		config.sriov = !!(MLX5_CAP_GEN(&priv->caps, eth_virt));
+
+		config.tso = !!(MLX5_CAP_ETH(&priv->caps, max_lso_cap));
 		if (config.tso)
 			config.tso_max_payload_sz =
-					device_attr_ex.tso_caps.max_tso;
+					1 << (MLX5_CAP_ETH(&priv->caps, max_lso_cap));
 		if (config.mps && !mps) {
 			ERROR("multi-packet send not supported on this device"
 			      " (" MLX5_TXQ_MPW_EN ")");
 			err = ENOTSUP;
 			goto port_error;
 		}
-		INFO("%sMPS is %s",
+		//INFO("%sMPS is %s",
+		ERROR("========= %sMPS is %s",
 		     config.mps == MLX5_MPW_ENHANCED ? "Enhanced " : "",
 		     config.mps != MLX5_MPW_DISABLED ? "enabled" : "disabled");
+
 		if (config.cqe_comp && !cqe_comp) {
 			WARN("Rx CQE compression isn't supported");
+			ERROR("========= Rx CQE compression isn't supported");
 			config.cqe_comp = 0;
 		}
-#endif
+
 		err = priv_uar_init_primary(priv); // FIXME
 		if (err) {
 			ERROR(" =========%s: %d", __FUNCTION__, __LINE__);
@@ -747,51 +712,50 @@ mlx5_mdev_init(struct rte_eth_dev *edev)
 			goto port_error;
 		}
 
-		INFO("port %u MAC address is %02x:%02x:%02x:%02x:%02x:%02x",
+		//INFO("port %u MAC address is %02x:%02x:%02x:%02x:%02x:%02x",
+		ERROR("========= port %u MAC address is %02x:%02x:%02x:%02x:%02x:%02x",
 		     priv->port,
 		     mac.addr_bytes[0], mac.addr_bytes[1],
 		     mac.addr_bytes[2], mac.addr_bytes[3],
 		     mac.addr_bytes[4], mac.addr_bytes[5]);
 #ifndef NDEBUG
-#if 0   // TODO: get name
 		{
 			char ifname[IF_NAMESIZE];
 			if (priv_get_ifname(priv, &ifname) == 0)
-				DEBUG("port %u ifname is \"%s\"",
+				//DEBUG("port %u ifname is \"%s\"",
+				ERROR("========= port %u ifname is \"%s\"",
 				      priv->port, ifname);
 			else
 
-				DEBUG("port %u ifname is unknown", priv->port);
+				//DEBUG("port %u ifname is unknown", priv->port);
+				ERROR("========= port %u ifname is unknown", priv->port);
 		}
 #endif
-#endif
-
-// ~~~~
 		/* Get actual MTU if possible. */
 		priv_get_mtu(priv, &priv->mtu);
-		printf("port %u MTU is %u\n", priv->port, priv->mtu);
+		ERROR("======== port %u MTU is %u\n", priv->port, priv->mtu);
 		DEBUG("port %u MTU is %u", priv->port, priv->mtu);
 
-		//eth_dev = rte_eth_dev_allocate(name);
-//		if (eth_dev == NULL) {
-//			ERROR("can not allocate rte ethdev");
-//			err = ENOMEM;
-//			goto port_error;
-//		}
-		//eth_dev->data->dev_private = priv; //FIXME should be set after ...
+		eth_dev = rte_eth_dev_allocate(name);
+		if (eth_dev == NULL) {
+			ERROR("can not allocate rte ethdev");
+			err = ENOMEM;
+			goto port_error;
+		}
+		eth_dev->data->dev_private = priv;
 		eth_dev->data->mac_addrs = priv->mac;
-		//eth_dev->device = &pci_dev->device;
-		//rte_eth_copy_pci_info(eth_dev, pci_dev);
-		//eth_dev->device->driver = &mlx5_driver.driver;
+		eth_dev->device = &pci_dev->device;
+		rte_eth_copy_pci_info(eth_dev, pci_dev);
+		eth_dev->device->driver = &mlx5_mdev_pci_driver.driver;
 		/*
 		 * Initialize burst functions to prevent crashes before link-up.
 		 */
 //		eth_dev->rx_pkt_burst = removed_rx_burst;
 //		eth_dev->tx_pkt_burst = removed_tx_burst;
-		//priv->dev = eth_dev;
+		priv->dev = eth_dev;
 		eth_dev->dev_ops = &mlx5_mdev_dev_ops; // TODO: Return: &mlx5_mdev_ops;
 		/* Register MAC address. */
-//		claim_zero(mlx5_mac_addr_add(eth_dev, &mac, 0, 0));
+		claim_zero(mlx5_mdev_mac_addr_add(eth_dev, &mac, 0, 0));
 //		TAILQ_INIT(&priv->flows);
 //		TAILQ_INIT(&priv->ctrl_flows);
 
@@ -802,18 +766,20 @@ mlx5_mdev_init(struct rte_eth_dev *edev)
 		priv->config = config;
 		continue;
 
-port_error:
 //FIXME: should destroy objects
+port_error:
+		if (priv) { // TODO: Add dealloc routines
 #if 0
-		if (priv)
-			rte_free(priv);
-		if (pd)
-			claim_zero(mlx5_glue->dealloc_pd(pd));
-		if (ctx)
-			claim_zero(mlx5_glue->close_device(ctx));
+			if (priv->td.td_object)
+				mlx5_mdev_dealloc_td(priv->td.td_object);
+			if (priv->pd.pd_object)
+				mlx5_mdev_dealloc_pd(priv->pd.pd_object);
 #endif
+			rte_free(priv);
+		}
+		if (dev_ctx)
+			claim_zero(devx_close_device(dev_ctx));
 		break;
-
 	}
 
 	/*
@@ -831,16 +797,14 @@ port_error:
 	}
 
 error:
-#if 0
+	rte_free(caps);
 	if (attr_ctx)
-		claim_zero(mlx5_glue->close_device(attr_ctx));
+		claim_zero(devx_close_device(attr_ctx));
 	if (list)
-		mlx5_glue->free_device_list(list);
-#endif
+		devx_free_device_list(list);
 	ERROR(" =========%s: %d ret %d", __FUNCTION__, __LINE__, err);
 	assert(err >= 0);
 	return -err;
-
 }
 #if 0
 static int mlx5_mdev_init(struct rte_eth_dev *edev)
@@ -903,172 +867,43 @@ static int mlx5_mdev_uninit(struct rte_eth_dev *edev)
 	return 0;
 }
 #endif
-static int mlx5_mdev_pci_probe(__rte_unused struct rte_pci_driver *pci_drv,
-			   struct rte_pci_device *pci_dev)
-{
-	printf("ooooOri pci probe\n");
 
-	struct rte_eth_dev *eth_dev;
-	int ret=0;
-	
-	printf("oooOri device name %s\n",pci_dev->device.name);
-	assert(pci_drv == &mlx5_mdev_driver);
-
-	eth_dev = rte_eth_dev_pci_allocate(pci_dev,
-		sizeof(struct mlx5_mdev_priv));
-
-	if (!eth_dev) {
-		ERROR("rte_eth_dev_pci_allocate Failed");
-		return -ENOMEM;
-	}
-	ret = mlx5_mdev_init(eth_dev);
-	if (ret) {
-		ERROR("mlx5_mdev_init Failed (%d)", ret);
-		rte_eth_dev_pci_release(eth_dev);
-	}
-	printf("oooOri end of probe fuction\n");
-	return ret;
-
-#if 0
-	struct devx_device **device_list;
-	int num_devices;
-	void *device = NULL;
-	int err = 0;
-	int i;
-	int32_t tunnel_en =0;
-	int32_t sriov;
-	//uint8_t mac_address[6];
-
-	device_list = devx_get_device_list(&num_devices);	
-	//return rte_eth_dev_pci_generic_probe(pdev, sizeof(struct mlx5_mdev_priv),
-	//		mlx5_mdev_init);
-	printf("oooOri num of devices %d, %p\n",num_devices, device_list);
-	while (num_devices !=0) {
-		struct rte_pci_addr pci_addr;
-
-		num_devices--;
-		if (devx_device_to_pci_addr(device_list[num_devices],
-						&pci_addr))
-			continue;
-		if ((pci_dev->addr.domain != pci_addr.domain) ||
-		    (pci_dev->addr.bus != pci_addr.bus) ||
-		    (pci_dev->addr.devid != pci_addr.devid) ||
-		    (pci_dev->addr.function != pci_addr.function))
-			continue;
-		sriov = ((pci_dev->id.device_id ==
-		       PCI_DEVICE_ID_MELLANOX_CONNECTX4VF) ||
-		      (pci_dev->id.device_id ==
-		       PCI_DEVICE_ID_MELLANOX_CONNECTX4LXVF) ||
-		      (pci_dev->id.device_id ==
-		       PCI_DEVICE_ID_MELLANOX_CONNECTX5VF) ||
-		      (pci_dev->id.device_id ==
-		       PCI_DEVICE_ID_MELLANOX_CONNECTX5EXVF));
-		switch (pci_dev->id.device_id) {
-		case PCI_DEVICE_ID_MELLANOX_CONNECTX4:
-			tunnel_en = 1;
-			break;
-		case PCI_DEVICE_ID_MELLANOX_CONNECTX4LX:
-		case PCI_DEVICE_ID_MELLANOX_CONNECTX5:
-		case PCI_DEVICE_ID_MELLANOX_CONNECTX5VF:
-		case PCI_DEVICE_ID_MELLANOX_CONNECTX5EX:
-		case PCI_DEVICE_ID_MELLANOX_CONNECTX5EXVF:
-			tunnel_en = 1;
-			break;
-		default:
-			break;
-		}
-		INFO("PCI information matches, using device \\%s\\(SR-IOV: %s)",
-		     device_list[num_devices]->name,
-		     sriov ? "true" : "false");
-		device = devx_open_device(device_list[num_devices]);
-		err = errno;
-		
-		if (device == NULL) {
-			devx_free_device_list(device_list);
-			switch (err) {
-			case 0:
-				ERROR("cannot access device");
-				return -ENODEV;
-			case EINVAL:
-				ERROR("cannot use device");
-				return -EINVAL;
-		
-			assert(err >0);
-			return -err;
-			}
-		}
-		for (i = 0; i < 1; i++) {
-			char name[RTE_ETH_NAME_MAX_LEN];
-			//int len;
-			//uint32_t port = i+1; /* ports are indexed from one */
-			struct mlx5_mdev_priv *priv = NULL;
-			//struct ether_addr mac;
-			struct rte_eth_dev *eth_dev;
-		
-			snprintf(name, sizeof(name), PCI_PRI_FMT,
-				pci_dev->addr.domain, pci_dev->addr.bus,
-				pci_dev->addr.devid, pci_dev->addr.function);
-
-			priv = rte_zmalloc("ethdev private structure",
-						sizeof(*priv),
-						RTE_CACHE_LINE_SIZE);
-
-			if (priv == NULL) {
-				ERROR("priv alloaction failure");
-				err = ENOMEM;
-				goto port_error;
-			}	
-			eth_dev = rte_eth_dev_allocate(name);
-			priv->edev = eth_dev;
-			priv->dev = device;
-			mlx5_mdev_alloc_pd(priv);
-			err = devx_alloc_uar(priv->dev, &priv->uar_index,
-					(void *)&priv->uar); 
-			printf("oooOri uar res = %x, index = %x, tunnel = %d\n",
-				err,
-				priv->uar_index, tunnel_en);
-			
-			if (eth_dev == NULL) {
-				ERROR("can not allocate rte ethdev");
-				err = ENOMEM;
-				goto port_error;
-			}
-			//priv_get_mac(priv, &mac_address);
-			//get_mac_address(mac_address);
-			//eth_dev->data->dev_private = priv;
-			//eth_dev->data->mac_addrs = priv->mac;
-			//eth_dev->device = &pci_dev->device;
-			//rte_eth_copy_pci_info(eth_dev, pci_dev);
-			//eth_dev->device->driver = &mlx5_driver.driver;
-			continue;		
-port_error:
-			if(priv)
-				rte_free(priv);
-			if(device)
-				devx_close_device(device);
-			goto error;	
-		}
-	}
-	printf("oooOri end of pci probe\n");
-	return 0;
-error:
-	return -err;
-#endif
-	return 0;
-}
-#if 0
-static int mlx5_mdev_pci_remove(struct rte_pci_device *pci_dev)
-{
-	return rte_eth_dev_pci_generic_remove(pci_dev, mlx5_mdev_uninit);
-}
-#endif
 static const struct rte_pci_id mlx5_mdev_pci_id_map[] = {
-	{ RTE_PCI_DEVICE(0x15b3, 0x1014) }, /* ConnectX-4   VF */
-	{ RTE_PCI_DEVICE(0x15b3, 0x1016) }, /* ConnectX-4Lx VF */
-	{ RTE_PCI_DEVICE(0x15b3, 0x1018) }, /* ConnectX-5   VF */
-	{ RTE_PCI_DEVICE(0x15b3, 0x101a) }, /* ConnectX-5Ex VF */
-	{ RTE_PCI_DEVICE(0x15b3, 0x1017) }, /* ConnectX-5 */
-	{ .vendor_id = 0, /* sentinel */ },
+	{
+		RTE_PCI_DEVICE(PCI_VENDOR_ID_MELLANOX,
+			       PCI_DEVICE_ID_MELLANOX_CONNECTX4)
+	},
+	{
+		RTE_PCI_DEVICE(PCI_VENDOR_ID_MELLANOX,
+			       PCI_DEVICE_ID_MELLANOX_CONNECTX4VF)
+	},
+	{
+		RTE_PCI_DEVICE(PCI_VENDOR_ID_MELLANOX,
+			       PCI_DEVICE_ID_MELLANOX_CONNECTX4LX)
+	},
+	{
+		RTE_PCI_DEVICE(PCI_VENDOR_ID_MELLANOX,
+			       PCI_DEVICE_ID_MELLANOX_CONNECTX4LXVF)
+	},
+	{
+		RTE_PCI_DEVICE(PCI_VENDOR_ID_MELLANOX,
+			       PCI_DEVICE_ID_MELLANOX_CONNECTX5)
+	},
+	{
+		RTE_PCI_DEVICE(PCI_VENDOR_ID_MELLANOX,
+			       PCI_DEVICE_ID_MELLANOX_CONNECTX5VF)
+	},
+	{
+		RTE_PCI_DEVICE(PCI_VENDOR_ID_MELLANOX,
+			       PCI_DEVICE_ID_MELLANOX_CONNECTX5EX)
+	},
+	{
+		RTE_PCI_DEVICE(PCI_VENDOR_ID_MELLANOX,
+			       PCI_DEVICE_ID_MELLANOX_CONNECTX5EXVF)
+	},
+	{
+		.vendor_id = 0
+	}
 };
 
 static struct rte_pci_driver mlx5_mdev_pci_driver = {
@@ -1076,12 +911,27 @@ static struct rte_pci_driver mlx5_mdev_pci_driver = {
 		.name = "MLX5_MDEV_DRIVER" 
 	},
 	.id_table	= mlx5_mdev_pci_id_map,
-	.drv_flags	= RTE_PCI_DRV_INTR_LSC | RTE_PCI_DRV_INTR_RMV,//RTE_PCI_DRV_NEED_MAPPING,
+	.drv_flags	= RTE_PCI_DRV_INTR_LSC | RTE_PCI_DRV_INTR_RMV,
 	.probe		= mlx5_mdev_pci_probe,
-	//.remove		= mlx5_mdev_pci_remove,
 };
 
-RTE_PMD_REGISTER_PCI(net_mlx5_mdev, mlx5_mdev_pci_driver);
+/**
+ * Driver initialization routine.
+ */
+RTE_INIT(rte_mlx5_mdev_pmd_init);
+static void
+rte_mlx5_mdev_pmd_init(void)
+{
+	/* Build the static table for ptype conversion. */
+//	mlx5_mdev_set_ptype_table();
+
+	/* Match the size of Rx completion entry to the size of a cacheline. */
+	if (RTE_CACHE_LINE_SIZE == 128)
+		setenv("MLX5_MDEV_CQE_SIZE", "128", 0);
+
+	rte_pci_register(&mlx5_mdev_pci_driver);
+}
+
+RTE_PMD_EXPORT_NAME(net_mlx5_mdev, __COUNTER__);
 RTE_PMD_REGISTER_PCI_TABLE(net_mlx5_mdev, mlx5_mdev_pci_id_map);
-//RTE_PMD_REGISTER_KMOD_DEP(net_mlx5_mdev, "* ib_uverbs | mlx5_core | * igb_uio | uio_pci_generic | vfio-pci");
 RTE_PMD_REGISTER_KMOD_DEP(net_mlx5_mdev, "* ib_uverbs & mlx5_core");
