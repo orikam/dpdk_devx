@@ -381,6 +381,19 @@ err_tis:
 	return NULL;
 }
 
+static int calc_sq_size(struct mlx5_mdev_priv *priv, struct mdev_sq_attr *attr)
+{
+	uint32_t size = sizeof(mlx5_wqe_ctrl_seg) + sizeof(mlx5_wqe_eth_seg_small);
+	uint32_t inl_size = 0;
+	uint32_t max_gather;
+
+	if (attr->max_inline_size)
+		inl_size = size + sizeof(mlx5_wqe_inl_data_seg) + attr->max_inline_size;
+	if (attr->max_tso_header)
+		size += attr->max_tso_header;
+		
+	return size;
+}
 
 struct mdev_sq *
 mlx5_mdev_create_sq(struct mlx5_mdev_priv *priv,
@@ -389,11 +402,13 @@ mlx5_mdev_create_sq(struct mlx5_mdev_priv *priv,
 	int ret;
 	struct mdev_sq *sq;
 
-
+	printf("oooOri size %ld, %ld\n",sizeof(struct mlx5_wqe_ctrl_seg),
+		sizeof(struct mlx5_wqe_eth_seg_small));
 	sq = rte_zmalloc("sq", sizeof(*sq), priv->cache_line_size);
 	if(!sq)
 		return NULL;
-	sq->wq.dbrec.addr = devx_alloc_db(sq_attr->ctx, &sq->wq.dbrec.index, &sq->wq.dbrec.offset);
+	sq->wq.dbrec.addr = devx_alloc_db(sq_attr->ctx, &sq->wq.dbrec.index,
+					&sq->wq.dbrec.offset);
 	if (!sq->wq.dbrec.addr) {
 		ERROR("can't allocate dbrec in create sq");
 //		goto err_spl;

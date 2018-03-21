@@ -160,6 +160,8 @@ struct mdev_sq_attr {
 	uint32_t tisn;
 	uint32_t uar;
 	uint32_t state;
+	uint32_t max_inline_data;
+	uint32_t max_tso_header;
 	struct mdev_wq_attr wq;
 };
 
